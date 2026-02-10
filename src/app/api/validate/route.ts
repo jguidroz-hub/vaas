@@ -267,27 +267,24 @@ async function captureSubmission(data: {
   ecosystem: string;
   fingerprint: string;
 }) {
-  if (!process.env.DATABASE_URL) return; // Skip if no DB configured
+  if (!process.env.DATABASE_URL) return;
   
   try {
-    const { db } = await import('@/lib/db');
-    const { submissions } = await import('@/lib/schema');
+    // Use raw neon SQL for reliability in serverless (avoids Drizzle import issues)
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL!);
     
-    await db.insert(submissions).values({
-      idea: data.idea,
-      audience: data.audience,
-      revenueModel: data.revenueModel,
-      confidence: data.confidence,
-      verdict: data.verdict,
-      risks: data.risks,
-      strengths: data.strengths,
-      recommendations: data.recommendations,
-      patternsMatched: data.patternsMatched,
-      category: data.category,
-      ecosystem: data.ecosystem,
-      fingerprint: data.fingerprint,
-      source: 'web',
-    });
+    await sql`INSERT INTO vaas_submissions (
+      idea, audience, revenue_model, confidence, verdict,
+      risks, strengths, recommendations, patterns_matched,
+      category, ecosystem, fingerprint, source
+    ) VALUES (
+      ${data.idea}, ${data.audience || null}, ${data.revenueModel || null},
+      ${data.confidence}, ${data.verdict},
+      ${JSON.stringify(data.risks)}::jsonb, ${JSON.stringify(data.strengths)}::jsonb,
+      ${JSON.stringify(data.recommendations)}::jsonb, ${data.patternsMatched},
+      ${data.category}, ${data.ecosystem}, ${data.fingerprint}, 'web'
+    )`;
   } catch (err) {
     console.error('[VaaS] Submission capture failed:', err);
   }
