@@ -71,6 +71,20 @@ export const buildRequests = pgTable('build_requests', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// ── Subscribers (from Stripe checkout) ───────────────────────
+export const subscribers = pgTable('subscribers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: text('email').notNull().unique(),
+  stripeCustomerId: text('stripe_customer_id').notNull(),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  plan: text('plan').notNull().default('free'), // 'free', 'pro', 'enterprise'
+  status: text('status').notNull().default('active'), // 'active', 'cancelled', 'past_due'
+  validationsUsed: integer('validations_used').default(0),
+  currentPeriodEnd: timestamp('current_period_end'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // ── Aggregate Market Signals (for Greenbelt Discovery) ──────
 export const marketSignals = pgTable('market_signals', {
   id: uuid('id').defaultRandom().primaryKey(),

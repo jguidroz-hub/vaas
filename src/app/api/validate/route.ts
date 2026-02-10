@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { db } from '@/lib/db';
+import { subscribers } from '@/lib/schema';
+import { eq, and } from 'drizzle-orm';
 
 // ── Rate Limiting ──────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -66,11 +69,28 @@ interface ValidateRequest {
   model?: string;
 }
 
+async function isSubscriber(email: string | null): Promise<boolean> {
+  if (!email) return false;
+  try {
+    const result = await db.select().from(subscribers)
+      .where(and(eq(subscribers.email, email.toLowerCase()), eq(subscribers.status, 'active')))
+      .limit(1);
+    return result.length > 0 && result[0].plan !== 'free';
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  if (!checkRateLimit(ip)) {
+  
+  // Check subscriber status — subscribers skip rate limiting
+  const subscriberEmail = request.cookies.get('vaas_email')?.value || null;
+  const isPaid = await isSubscriber(subscriberEmail);
+  
+  if (!isPaid && !checkRateLimit(ip)) {
     return NextResponse.json(
-      { error: 'Rate limited. Free tier: 5 validations/hour.' },
+      { error: 'Rate limited. Free tier: 5 validations/hour. Upgrade to Pro for unlimited.', upgrade: true },
       { status: 429 }
     );
   }

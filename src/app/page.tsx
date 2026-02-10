@@ -1,11 +1,24 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 function CheckoutBannerInner() {
   const params = useSearchParams();
   const checkout = params.get('checkout');
+  const email = params.get('email');
+
+  // Auto-login after successful checkout
+  useEffect(() => {
+    if (checkout === 'success' && email) {
+      fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).catch(() => {});
+    }
+  }, [checkout, email]);
+
   if (!checkout) return null;
   
   if (checkout === 'success') {
@@ -27,6 +40,56 @@ function CheckoutBannerInner() {
 
 function CheckoutBanner() {
   return <Suspense fallback={null}><CheckoutBannerInner /></Suspense>;
+}
+
+function SubscriberLogin() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [auth, setAuth] = useState<{ authenticated: boolean; email?: string; plan?: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth').then(r => r.json()).then(setAuth).catch(() => {});
+  }, [status]);
+
+  if (auth?.authenticated) {
+    return (
+      <div className="text-sm text-gray-400 text-right">
+        ✅ <span className="text-green-400">{auth.plan?.toUpperCase()}</span> — {auth.email}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 justify-end text-sm">
+      <span className="text-gray-500">Subscriber?</span>
+      <input
+        type="email"
+        value={email}
+        onChange={e => setEmail(e.target.value)}
+        placeholder="your@email.com"
+        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 text-sm w-48"
+      />
+      <button
+        onClick={async () => {
+          setStatus('loading');
+          try {
+            const res = await fetch('/api/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email }),
+            });
+            if (res.ok) setStatus('success');
+            else setStatus('error');
+          } catch { setStatus('error'); }
+        }}
+        disabled={status === 'loading'}
+        className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm disabled:opacity-50"
+      >
+        {status === 'loading' ? '...' : 'Log In'}
+      </button>
+      {status === 'error' && <span className="text-red-400 text-xs">Not found</span>}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -62,6 +125,7 @@ export default function Home() {
 
   return (
     <main className="max-w-4xl mx-auto px-6 py-16">
+      <SubscriberLogin />
       <CheckoutBanner />
       {/* Hero */}
       <section className="text-center mb-16">
