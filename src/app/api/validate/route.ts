@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // ── Rate Limiting ──────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -169,14 +170,124 @@ export async function POST(request: NextRequest) {
     ? `Your idea shows promise. ${matchedStrengths.length > 0 ? `Key strengths: ${matchedStrengths[0].toLowerCase()}.` : ''} ${matchedRisks.length > 0 ? `Watch out for: ${matchedRisks[0].risk.split('.')[0].toLowerCase()}.` : ''} Focus on validating your core assumption with real users.`
     : `This space has significant headwinds. ${matchedRisks.length > 0 ? matchedRisks[0].risk : 'The market is highly competitive.'} That doesn't mean it's impossible — but you'll need a very specific angle to succeed.`;
 
+  const risks = matchedRisks.map(r => r.risk);
+  const patternsMatchedCount = matchedRisks.length + matchedStrengths.length;
+
+  // ── Flywheel: Capture submission data ──
+  // Non-blocking — never let DB failures break the validation response
+  const fingerprint = crypto.createHash('sha256').update(`${ip}:${request.headers.get('user-agent') || ''}`).digest('hex').slice(0, 16);
+  const category = detectCategory(ideaLower);
+  const ecosystem = detectEcosystem(ideaLower);
+
+  captureSubmission({
+    idea: idea.slice(0, 2000), // Truncate for storage
+    audience: audience?.slice(0, 500),
+    revenueModel: model,
+    confidence,
+    verdict,
+    risks,
+    strengths: matchedStrengths,
+    recommendations,
+    patternsMatched: patternsMatchedCount,
+    category,
+    ecosystem,
+    fingerprint,
+  }).catch(() => {}); // Fire and forget
+
   return NextResponse.json({
     confidence,
     verdict,
     summary,
-    risks: matchedRisks.map(r => r.risk),
+    risks,
     strengths: matchedStrengths,
     recommendations,
-    patternsMatched: matchedRisks.length + matchedStrengths.length,
+    patternsMatched: patternsMatchedCount,
     validatedAt: new Date().toISOString(),
+    // Tease the build offering for viable ideas
+    ...(confidence >= 50 ? {
+      buildCta: {
+        message: 'Want us to build this for you? Our AI factory produces production-grade apps in days, not months.',
+        url: '/build',
+        tier: confidence >= 75 ? 'strong_candidate' : 'moderate_candidate',
+      }
+    } : {}),
   });
+}
+
+// ── Category Detection ─────────────────────────────────────
+function detectCategory(text: string): string {
+  const categories: Array<[RegExp, string]> = [
+    [/e.?commerce|shop|store|cart|merchant|retail/, 'ecommerce'],
+    [/fintech|payment|banking|trading|invest|crypto/, 'fintech'],
+    [/health|medical|patient|clinic|wellness/, 'healthtech'],
+    [/education|learn|course|student|tutor/, 'edtech'],
+    [/developer|code|api|devtool|ci.?cd|deploy/, 'devtools'],
+    [/market|seo|social|content|email.*market|growth/, 'marketing'],
+    [/hr|recruit|hiring|employee|team|workforce/, 'hr'],
+    [/real.?estate|property|rent|mortgage/, 'realestate'],
+    [/restaurant|food|delivery|kitchen|menu/, 'foodtech'],
+    [/legal|compliance|contract|law/, 'legaltech'],
+    [/productiv|task|project|workflow|automat/, 'productivity'],
+    [/data|analytics|dashboard|report|insight/, 'analytics'],
+    [/security|auth|identity|access|encrypt/, 'security'],
+    [/ai|machine.?learn|llm|gpt|model/, 'ai-native'],
+  ];
+  for (const [re, cat] of categories) {
+    if (re.test(text)) return cat;
+  }
+  return 'other';
+}
+
+function detectEcosystem(text: string): string {
+  if (/shopify/.test(text)) return 'shopify';
+  if (/bigcommerce/.test(text)) return 'bigcommerce';
+  if (/chrome.*ext|browser.*ext/.test(text)) return 'chrome';
+  if (/vs.?code|visual studio/.test(text)) return 'vscode';
+  if (/wordpress|wp/.test(text)) return 'wordpress';
+  if (/slack/.test(text)) return 'slack';
+  if (/salesforce/.test(text)) return 'salesforce';
+  if (/hubspot/.test(text)) return 'hubspot';
+  if (/jira|atlassian|confluence/.test(text)) return 'atlassian';
+  return 'standalone';
+}
+
+// ── Submission Capture (async, non-blocking) ───────────────
+async function captureSubmission(data: {
+  idea: string;
+  audience?: string;
+  revenueModel?: string;
+  confidence: number;
+  verdict: string;
+  risks: string[];
+  strengths: string[];
+  recommendations: string[];
+  patternsMatched: number;
+  category: string;
+  ecosystem: string;
+  fingerprint: string;
+}) {
+  if (!process.env.DATABASE_URL) return; // Skip if no DB configured
+  
+  try {
+    const { db } = await import('@/lib/db');
+    const { submissions } = await import('@/lib/schema');
+    
+    await db.insert(submissions).values({
+      idea: data.idea,
+      audience: data.audience,
+      revenueModel: data.revenueModel,
+      confidence: data.confidence,
+      verdict: data.verdict,
+      risks: data.risks,
+      strengths: data.strengths,
+      recommendations: data.recommendations,
+      patternsMatched: data.patternsMatched,
+      category: data.category,
+      ecosystem: data.ecosystem,
+      fingerprint: data.fingerprint,
+      source: 'web',
+    });
+  } catch (err) {
+    console.error('[VaaS] Submission capture failed:', err);
+  }
 }
