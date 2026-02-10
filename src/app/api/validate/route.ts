@@ -69,15 +69,18 @@ interface ValidateRequest {
   model?: string;
 }
 
-async function isSubscriber(email: string | null): Promise<boolean> {
-  if (!email) return false;
+async function getSubscriber(email: string | null): Promise<{ isPaid: boolean; plan: string }> {
+  if (!email) return { isPaid: false, plan: 'free' };
   try {
     const result = await db.select().from(subscribers)
       .where(and(eq(subscribers.email, email.toLowerCase()), eq(subscribers.status, 'active')))
       .limit(1);
-    return result.length > 0 && result[0].plan !== 'free';
+    if (result.length > 0 && result[0].plan !== 'free') {
+      return { isPaid: true, plan: result[0].plan };
+    }
+    return { isPaid: false, plan: 'free' };
   } catch {
-    return false;
+    return { isPaid: false, plan: 'free' };
   }
 }
 
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
   
   // Check subscriber status — subscribers skip rate limiting
   const subscriberEmail = request.cookies.get('vaas_email')?.value || null;
-  const isPaid = await isSubscriber(subscriberEmail);
+  const { isPaid, plan: subscriberPlan } = await getSubscriber(subscriberEmail);
   
   if (!isPaid && !checkRateLimit(ip)) {
     return NextResponse.json(
@@ -121,7 +124,7 @@ export async function POST(request: NextRequest) {
   // The orchestrator runs the 5-7 min debate and emails results directly.
   // We can't wait — Vercel functions timeout at 60s.
   if (isPaid && subscriberEmail) {
-    triggerGuardianAsync(idea, audience, subscriberEmail).catch(err => 
+    triggerGuardianAsync(idea, audience, subscriberEmail, subscriberPlan).catch(err => 
       console.error('[VaaS] Guardian trigger failed:', err)
     );
   }
@@ -246,13 +249,16 @@ export async function POST(request: NextRequest) {
     ...(isPaid && subscriberEmail ? {
       deepValidation: {
         status: 'running',
-        message: 'Full Guardian adversarial debate is running (5-7 min). Results will be emailed to you.',
+        tier: subscriberPlan,
+        message: subscriberPlan === 'enterprise' 
+          ? 'Full research dossier running: Perplexity market research + AI enrichment + Guardian debate (8-12 min). Results emailed to you.'
+          : 'Guardian adversarial debate running (5-7 min). Results emailed to you.',
         email: subscriberEmail,
       }
     } : !isPaid ? {
       deepValidation: {
         status: 'upgrade',
-        message: 'Upgrade to Pro for full adversarial validation — 3-round Builder vs Guardian debate with detailed report.',
+        message: 'Upgrade to Pro for full adversarial validation, or Enterprise for complete market research dossier.',
       }
     } : {}),
   });
@@ -334,7 +340,7 @@ async function captureSubmission(data: {
 }
 
 // ── Fire-and-forget: tell orchestrator to run debate + email results ──
-async function triggerGuardianAsync(idea: string, audience: string | undefined, email: string) {
+async function triggerGuardianAsync(idea: string, audience: string | undefined, email: string, plan: string = 'pro') {
   const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
   const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
 
@@ -352,6 +358,7 @@ async function triggerGuardianAsync(idea: string, audience: string | undefined, 
         description: idea,
         targetMarket: audience,
         notifyEmail: email,
+        tier: plan === 'enterprise' ? 'enterprise' : 'pro',
       }),
       signal: AbortSignal.timeout(5_000),
     });

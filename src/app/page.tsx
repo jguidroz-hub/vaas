@@ -233,9 +233,9 @@ export default function Home() {
       <section className="mt-20">
         <h2 className="text-2xl font-bold text-center mb-10">How it works</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <Step num={1} title="Submit your idea" desc="Describe what you want to build, who it's for, and how it makes money." />
-          <Step num={2} title="Guardian tries to kill it" desc="Our adversarial AI agent matches your idea against 1,310+ failure patterns from real startups." />
-          <Step num={3} title="Get your report" desc="Confidence score, risk factors, competitive analysis, and specific recommendations." />
+          <Step num={1} title="Submit your idea" desc="Describe what you want to build, who it's for, and how it makes money. Instant results in seconds." />
+          <Step num={2} title="Guardian tries to kill it" desc="Pro: 3-round adversarial debate between Builder and Guardian AI agents. Enterprise: full market research + debate." />
+          <Step num={3} title="Get your dossier" desc="Detailed report emailed: verdict, debate transcript, market research, competitors, risks, and next steps." />
         </div>
       </section>
 
@@ -247,7 +247,7 @@ export default function Home() {
             tier="Free"
             price="$0"
             period=""
-            features={['5 validations/hour', 'Confidence score', 'Risk breakdown', 'Category detection']}
+            features={['5 validations/hour', 'Instant pattern matching (30 patterns)', 'Confidence score & risk breakdown', 'Category & ecosystem detection']}
             cta="Start Free"
             highlight={false}
           />
@@ -255,7 +255,7 @@ export default function Home() {
             tier="Pro"
             price="$29"
             period="/mo"
-            features={['Unlimited validations', 'Full adversarial report', 'Competitive analysis', 'PDF export', 'API access']}
+            features={['Unlimited instant validations', '⚔️ Full Guardian debate (3 rounds)', 'Builder vs Guardian adversarial AI', 'Detailed report emailed to you', 'Graveyard matching (1,310+ failures)', 'API access']}
             cta="Subscribe to Pro"
             highlight={true}
             plan="pro"
@@ -264,7 +264,7 @@ export default function Home() {
             tier="Enterprise"
             price="$199"
             period="/mo"
-            features={['Everything in Pro', 'Batch validation (CSV)', 'Custom failure patterns', 'Team collaboration', 'Priority support']}
+            features={['Everything in Pro, plus:', '📊 Perplexity market research', 'TAM/SAM/SOM sizing', 'Live competitor analysis', 'Revenue model assessment', 'Full research dossier emailed', 'Priority support']}
             cta="Subscribe to Enterprise"
             highlight={false}
             plan="enterprise"
@@ -336,6 +336,31 @@ function ValidationReport({ report }: { report: any }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {report.deepValidation && (
+        <div className={`mt-6 p-4 rounded-lg border ${
+          report.deepValidation.status === 'running' 
+            ? 'bg-purple-500/10 border-purple-500/20' 
+            : 'bg-gray-800/50 border-gray-700/50'
+        }`}>
+          {report.deepValidation.status === 'running' ? (
+            <div className="flex items-center gap-3">
+              <div className="animate-pulse text-purple-400 text-xl">⚔️</div>
+              <div>
+                <p className="text-purple-300 font-medium">
+                  {report.deepValidation.tier === 'enterprise' ? 'Full Research Dossier' : 'Guardian Debate'} in progress
+                </p>
+                <p className="text-gray-400 text-sm">{report.deepValidation.message}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-gray-300 text-sm">{report.deepValidation.message}</p>
+              <a href="#pricing" className="text-green-400 hover:underline text-sm font-medium">View plans →</a>
+            </div>
+          )}
         </div>
       )}
 
