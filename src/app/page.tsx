@@ -1,6 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+function CheckoutBannerInner() {
+  const params = useSearchParams();
+  const checkout = params.get('checkout');
+  if (!checkout) return null;
+  
+  if (checkout === 'success') {
+    return (
+      <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 mb-8 text-green-400 text-center">
+        🎉 Welcome to VaaS Pro! Your subscription is active. Unlimited validations unlocked.
+      </div>
+    );
+  }
+  if (checkout === 'cancelled') {
+    return (
+      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 mb-8 text-yellow-400 text-center">
+        Checkout cancelled. No charge was made. You can upgrade anytime.
+      </div>
+    );
+  }
+  return null;
+}
+
+function CheckoutBanner() {
+  return <Suspense fallback={null}><CheckoutBannerInner /></Suspense>;
+}
 
 export default function Home() {
   const [idea, setIdea] = useState('');
@@ -35,6 +62,7 @@ export default function Home() {
 
   return (
     <main className="max-w-4xl mx-auto px-6 py-16">
+      <CheckoutBanner />
       {/* Hero */}
       <section className="text-center mb-16">
         <div className="inline-block px-4 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full text-green-400 text-sm font-medium mb-6">
@@ -155,25 +183,27 @@ export default function Home() {
             tier="Free"
             price="$0"
             period=""
-            features={['1 validation/month', 'Basic report', 'Confidence score', 'Top 3 risks']}
-            cta="Get Started"
+            features={['5 validations/hour', 'Confidence score', 'Risk breakdown', 'Category detection']}
+            cta="Start Free"
             highlight={false}
           />
           <PriceCard
             tier="Pro"
             price="$29"
             period="/mo"
-            features={['Unlimited validations', 'Full adversarial report', 'PFI code scoring', 'Competitive analysis', 'PDF export', 'API access (100 calls/mo)']}
-            cta="Start Pro Trial"
+            features={['Unlimited validations', 'Full adversarial report', 'Competitive analysis', 'PDF export', 'API access']}
+            cta="Subscribe to Pro"
             highlight={true}
+            plan="pro"
           />
           <PriceCard
             tier="Enterprise"
             price="$199"
             period="/mo"
-            features={['Everything in Pro', 'Unlimited API access', 'Custom rubrics', 'Webhook callbacks', 'Bulk validation', 'Priority support']}
-            cta="Contact Sales"
+            features={['Everything in Pro', 'Batch validation (CSV)', 'Custom failure patterns', 'Team collaboration', 'Priority support']}
+            cta="Subscribe to Enterprise"
             highlight={false}
+            plan="enterprise"
           />
         </div>
       </section>
@@ -274,9 +304,33 @@ function Step({ num, title, desc }: { num: number; title: string; desc: string }
   );
 }
 
-function PriceCard({ tier, price, period, features, cta, highlight }: {
-  tier: string; price: string; period: string; features: string[]; cta: string; highlight: boolean;
+function PriceCard({ tier, price, period, features, cta, highlight, plan }: {
+  tier: string; price: string; period: string; features: string[]; cta: string; highlight: boolean; plan?: string;
 }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleClick() {
+    if (!plan) return; // Free tier — no checkout
+    setLoading(true);
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Failed to create checkout session');
+      }
+    } catch {
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className={`rounded-xl p-6 border ${highlight ? 'border-green-500 bg-green-500/5 ring-1 ring-green-500/20' : 'border-gray-800 bg-gray-900'}`}>
       {highlight && <div className="text-green-400 text-xs font-semibold uppercase tracking-wider mb-2">Most Popular</div>}
@@ -292,10 +346,14 @@ function PriceCard({ tier, price, period, features, cta, highlight }: {
           </li>
         ))}
       </ul>
-      <button className={`w-full py-2 px-4 rounded-lg font-medium transition-colors ${
-        highlight ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-      }`}>
-        {cta}
+      <button
+        onClick={handleClick}
+        disabled={loading}
+        className={`w-full py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 ${
+          highlight ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+        }`}
+      >
+        {loading ? 'Redirecting...' : cta}
       </button>
     </div>
   );
