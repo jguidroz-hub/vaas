@@ -150,6 +150,8 @@ export default function Home() {
           <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
           <a href="#compare" className="hover:text-white transition-colors">Compare</a>
           <a href="/generate" className="hover:text-white transition-colors">💡 Generate</a>
+          <a href="/ideas" className="hover:text-white transition-colors">📚 Library</a>
+          <a href="/trends" className="hover:text-white transition-colors">📈 Trends</a>
         </div>
       </nav>
 
