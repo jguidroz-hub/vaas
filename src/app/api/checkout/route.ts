@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       mode: isOneTime ? 'payment' : 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `https://vaas-greenbelt.vercel.app?checkout=success&email={CHECKOUT_SESSION_ID}&plan=${plan}`,
+      success_url: `https://vaas-greenbelt.vercel.app?checkout=success&session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
       cancel_url: `https://vaas-greenbelt.vercel.app?checkout=cancelled`,
       metadata: { plan },
       ...(email ? { customer_email: email } : {}),

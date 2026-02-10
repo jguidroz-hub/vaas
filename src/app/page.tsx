@@ -7,17 +7,25 @@ import { useSearchParams } from 'next/navigation';
 function CheckoutBannerInner() {
   const params = useSearchParams();
   const checkout = params.get('checkout');
-  const email = params.get('email');
+  const sessionId = params.get('session_id');
 
   useEffect(() => {
-    if (checkout === 'success' && email) {
-      fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      }).catch(() => {});
+    // After successful checkout, retrieve customer email from session and auto-login
+    if (checkout === 'success' && sessionId) {
+      fetch(`/api/checkout/success?session_id=${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.email) {
+            fetch('/api/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: data.email }),
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
-  }, [checkout, email]);
+  }, [checkout, sessionId]);
 
   if (!checkout) return null;
   if (checkout === 'success') {
