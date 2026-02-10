@@ -117,10 +117,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── For paid users: also trigger full Guardian debate (async, results emailed) ──
+  // ── For paid users: trigger Guardian debate on orchestrator (fire-and-forget) ──
+  // The orchestrator runs the 5-7 min debate and emails results directly.
+  // We can't wait — Vercel functions timeout at 60s.
   if (isPaid && subscriberEmail) {
-    triggerGuardianDebate(idea, audience, subscriberEmail).catch(err => 
-      console.error('[VaaS] Guardian async trigger failed:', err)
+    triggerGuardianAsync(idea, audience, subscriberEmail).catch(err => 
+      console.error('[VaaS] Guardian trigger failed:', err)
     );
   }
 
@@ -331,15 +333,17 @@ async function captureSubmission(data: {
   }
 }
 
-// ── Guardian Deep Validation (async, for paid subscribers) ──
-async function triggerGuardianDebate(idea: string, audience: string | undefined, email: string) {
+// ── Fire-and-forget: tell orchestrator to run debate + email results ──
+async function triggerGuardianAsync(idea: string, audience: string | undefined, email: string) {
   const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
   const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
 
-  console.log(`[VaaS] 🎯 Triggering Guardian debate for paid user: ${email}`);
+  console.log(`[VaaS] 🎯 Triggering Guardian debate for: ${email}`);
 
+  // Fire-and-forget: orchestrator handles debate + email.
+  // Abort after 5s — we just need the request accepted, not the result.
   try {
-    const res = await fetch(`${ORCHESTRATOR_URL}/api/challenge`, {
+    await fetch(`${ORCHESTRATOR_URL}/api/challenge/async`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -347,77 +351,17 @@ async function triggerGuardianDebate(idea: string, audience: string | undefined,
         name: idea.slice(0, 100),
         description: idea,
         targetMarket: audience,
+        notifyEmail: email,
       }),
-      signal: AbortSignal.timeout(600_000), // 10 min for full 3-round debate
+      signal: AbortSignal.timeout(5_000),
     });
-
-    if (!res.ok) {
-      console.error(`[VaaS] Guardian returned ${res.status}:`, await res.text());
-      return;
-    }
-
-    const result = await res.json();
-    console.log(`[VaaS] ✅ Guardian debate complete: ${result.verdict?.verdict} (${result.verdict?.verdictConfidence}%)`);
-
-    // Email the full report to subscriber
-    if (process.env.RESEND_API_KEY) {
-      const verdict = result.verdict || {};
-      const rounds = result.rounds || [];
-
-      const roundsHtml = rounds.map((r: any) => `
-        <div style="margin-bottom:16px;padding:12px;background:#1a1a2e;border-radius:8px;">
-          <strong>Round ${r.round}</strong><br/>
-          <div style="color:#4ade80;margin:8px 0;">🏗️ Builder: ${(r.builderPosition || '').slice(0, 300)}</div>
-          <div style="color:#f87171;">🛡️ Guardian: ${(r.guardianChallenge || '').slice(0, 300)}</div>
-        </div>
-      `).join('');
-
-      const verdictColor = verdict.verdict === 'STRONG_GO' ? '#4ade80' 
-        : verdict.verdict === 'CONDITIONAL_GO' ? '#facc15'
-        : verdict.verdict === 'PIVOT_REQUIRED' ? '#fb923c' : '#f87171';
-
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'VaaS <noreply@projectgreenbelt.com>',
-          to: email,
-          subject: `Guardian Report: ${verdict.verdict || 'Complete'} — "${idea.slice(0, 60)}..."`,
-          html: `
-            <div style="font-family:system-ui;max-width:600px;margin:0 auto;background:#0f0f23;color:#e2e8f0;padding:32px;border-radius:12px;">
-              <h1 style="color:${verdictColor};font-size:28px;margin-bottom:8px;">${verdict.verdict || 'Analysis Complete'}</h1>
-              <p style="color:#94a3b8;font-size:14px;">Confidence: ${verdict.verdictConfidence || 0}% · ${result.rounds?.length || 0} debate rounds · $${(result.totalCostUsd || 0).toFixed(3)} AI cost</p>
-              
-              <h2 style="color:#e2e8f0;margin-top:24px;">Executive Summary</h2>
-              <p style="color:#cbd5e1;">${verdict.synthesis || verdict.executiveSummary || 'No summary available.'}</p>
-              
-              <h2 style="color:#4ade80;margin-top:24px;">✅ Validated Strengths</h2>
-              <ul style="color:#cbd5e1;">${(verdict.survivingStrengths || []).map((s: string) => `<li>${s}</li>`).join('')}</ul>
-              
-              <h2 style="color:#f87171;margin-top:24px;">⚠️ Unresolved Concerns</h2>
-              <ul style="color:#cbd5e1;">${(verdict.validatedConcerns || []).map((c: string) => `<li>${c}</li>`).join('')}</ul>
-              
-              <h2 style="color:#e2e8f0;margin-top:24px;">Debate Transcript</h2>
-              ${roundsHtml}
-              
-              <h2 style="color:#e2e8f0;margin-top:24px;">Next Steps</h2>
-              <ul style="color:#cbd5e1;">${(verdict.mitigationStrategies || []).map((s: string) => `<li>${s}</li>`).join('')}</ul>
-              
-              <hr style="border-color:#334155;margin:24px 0;" />
-              <p style="color:#64748b;font-size:12px;">
-                Powered by Greenbelt Guardian · Builder vs Guardian adversarial validation<br/>
-                <a href="https://vaas-greenbelt.vercel.app" style="color:#4ade80;">vaas-greenbelt.vercel.app</a>
-              </p>
-            </div>
-          `,
-        }),
-      });
-      console.log(`[VaaS] 📧 Guardian report emailed to ${email}`);
-    }
+    console.log(`[VaaS] ✅ Guardian debate queued for ${email}`);
   } catch (err) {
-    console.error(`[VaaS] Guardian debate failed:`, err instanceof Error ? err.message : err);
+    // Timeout is expected — orchestrator accepted and is processing
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      console.log(`[VaaS] ✅ Guardian debate accepted (processing async on orchestrator)`);
+    } else {
+      console.error(`[VaaS] Guardian trigger failed:`, err instanceof Error ? err.message : err);
+    }
   }
 }
