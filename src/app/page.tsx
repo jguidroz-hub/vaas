@@ -278,7 +278,8 @@ export default function Home() {
               <tbody className="text-gray-300">
                 <CompareRow feature="Instant pattern matching" free="✅ 30 patterns" pro="✅ 30 patterns" enterprise="✅ 30 patterns" />
                 <CompareRow feature="Confidence score & risks" free="✅" pro="✅" enterprise="✅" />
-                <CompareRow feature="Validations" free="5/hour" pro="Unlimited" enterprise="Unlimited" />
+                <CompareRow feature="Instant validations" free="5/hour" pro="Unlimited" enterprise="Unlimited" />
+                <CompareRow feature="Deep analyses" free="—" pro="30/month (5/day)" enterprise="50/month (10/day)" />
                 <CompareRow feature="Builder vs Guardian debate" free="—" pro="✅ 3 rounds" enterprise="✅ 3 rounds" />
                 <CompareRow feature="Graveyard matching" free="—" pro="✅ 1,310+ failures" enterprise="✅ 1,310+ failures" />
                 <CompareRow feature="Report emailed to you" free="—" pro="✅ ~7 min" enterprise="✅ ~12 min" />
@@ -315,7 +316,7 @@ export default function Home() {
               tagline="Put your idea on trial"
               price="$29"
               period="/mo"
-              features={['Everything in Quick Check', '⚔️ 3-round adversarial AI debate', 'Builder defends, Guardian attacks', 'Graveyard: 1,310+ failures matched', 'Full report emailed (~7 min)', 'Unlimited validations', 'API access']}
+              features={['Everything in Quick Check', '⚔️ 3-round adversarial AI debate', 'Builder defends, Guardian attacks', 'Graveyard: 1,310+ failures matched', 'Full report emailed (~7 min)', '30 debates/month (5/day)', 'API access']}
               cta="Subscribe — $29/mo"
               highlight={true}
               plan="pro"
@@ -325,7 +326,7 @@ export default function Home() {
               tagline="Know your market before you build"
               price="$199"
               period="/mo"
-              features={['Everything in Guardian Debate', '📊 Perplexity live market research', 'TAM/SAM/SOM market sizing', 'Competitor & funding analysis', 'Revenue model assessment', 'Full research dossier emailed (~12 min)']}
+              features={['Everything in Guardian Debate', '📊 Perplexity live market research', 'TAM/SAM/SOM market sizing', 'Competitor & funding analysis', 'Revenue model assessment', 'Full dossier emailed (~12 min)', '50 verdicts/month (10/day)']}
               cta="Subscribe — $199/mo"
               highlight={false}
               plan="enterprise"
@@ -424,12 +425,20 @@ function ValidationReport({ report }: { report: any }) {
 
       {/* Deep Validation Status */}
       {report.deepValidation && (
-        <div className={`mt-6 p-4 rounded-xl border ${report.deepValidation.status === 'running' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-gray-800/50 border-gray-700/50'}`}>
+        <div className={`mt-6 p-4 rounded-xl border ${report.deepValidation.status === 'running' ? 'bg-purple-500/10 border-purple-500/20' : report.deepValidation.status === 'limit_reached' ? 'bg-yellow-500/10 border-yellow-500/20' : 'bg-gray-800/50 border-gray-700/50'}`}>
           {report.deepValidation.status === 'running' ? (
             <div className="flex items-center gap-3">
               <div className="animate-pulse text-purple-400 text-xl">⚔️</div>
               <div>
                 <p className="text-purple-300 font-medium">{report.deepValidation.tier === 'enterprise' ? 'Venture Verdict' : 'Guardian Debate'} in progress</p>
+                <p className="text-gray-400 text-sm">{report.deepValidation.message}</p>
+              </div>
+            </div>
+          ) : report.deepValidation.status === 'limit_reached' ? (
+            <div className="flex items-center gap-3">
+              <div className="text-yellow-400 text-xl">⚠️</div>
+              <div>
+                <p className="text-yellow-300 font-medium">Usage limit reached</p>
                 <p className="text-gray-400 text-sm">{report.deepValidation.message}</p>
               </div>
             </div>

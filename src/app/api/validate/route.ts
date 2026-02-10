@@ -69,18 +69,44 @@ interface ValidateRequest {
   model?: string;
 }
 
-async function getSubscriber(email: string | null): Promise<{ isPaid: boolean; plan: string }> {
-  if (!email) return { isPaid: false, plan: 'free' };
+// ── Usage Caps (protect against serving at a loss) ──────────
+// Guardian debate costs ~$0.35/run, Venture Verdict ~$0.80/run
+const MONTHLY_CAPS: Record<string, number> = { pro: 30, enterprise: 50 };
+const DAILY_CAPS: Record<string, number> = { pro: 5, enterprise: 10 };
+const dailyUsage = new Map<string, { count: number; resetAt: number }>();
+
+function checkDailyCap(email: string, plan: string): boolean {
+  const cap = DAILY_CAPS[plan] || 5;
+  const now = Date.now();
+  const key = `${email}:${plan}`;
+  const entry = dailyUsage.get(key);
+  if (!entry || now > entry.resetAt) {
+    dailyUsage.set(key, { count: 1, resetAt: now + 24 * 60 * 60 * 1000 });
+    return true;
+  }
+  if (entry.count >= cap) return false;
+  entry.count++;
+  return true;
+}
+
+async function getSubscriber(email: string | null): Promise<{ isPaid: boolean; plan: string; monthlyUsed: number }> {
+  if (!email) return { isPaid: false, plan: 'free', monthlyUsed: 0 };
   try {
     const result = await db.select().from(subscribers)
       .where(and(eq(subscribers.email, email.toLowerCase()), eq(subscribers.status, 'active')))
       .limit(1);
     if (result.length > 0 && result[0].plan !== 'free') {
-      return { isPaid: true, plan: result[0].plan };
+      // Reset counter if past period end
+      const periodEnd = result[0].currentPeriodEnd;
+      let used = result[0].validationsUsed || 0;
+      if (periodEnd && new Date() > periodEnd) {
+        used = 0; // past billing period, counter resets
+      }
+      return { isPaid: true, plan: result[0].plan, monthlyUsed: used };
     }
-    return { isPaid: false, plan: 'free' };
+    return { isPaid: false, plan: 'free', monthlyUsed: 0 };
   } catch {
-    return { isPaid: false, plan: 'free' };
+    return { isPaid: false, plan: 'free', monthlyUsed: 0 };
   }
 }
 
@@ -89,7 +115,7 @@ export async function POST(request: NextRequest) {
   
   // Check subscriber status — subscribers skip rate limiting
   const subscriberEmail = request.cookies.get('vaas_email')?.value || null;
-  const { isPaid, plan: subscriberPlan } = await getSubscriber(subscriberEmail);
+  const { isPaid, plan: subscriberPlan, monthlyUsed } = await getSubscriber(subscriberEmail);
   
   if (!isPaid && !checkRateLimit(ip)) {
     return NextResponse.json(
@@ -123,10 +149,26 @@ export async function POST(request: NextRequest) {
   // ── For paid users: trigger Guardian debate on orchestrator (fire-and-forget) ──
   // The orchestrator runs the 5-7 min debate and emails results directly.
   // We can't wait — Vercel functions timeout at 60s.
+  let debateTriggered = false;
+  let usageLimitHit = false;
   if (isPaid && subscriberEmail) {
-    triggerGuardianAsync(idea, audience, subscriberEmail, subscriberPlan).catch(err => 
-      console.error('[VaaS] Guardian trigger failed:', err)
-    );
+    const monthlyCap = MONTHLY_CAPS[subscriberPlan] || 30;
+    if (monthlyUsed >= monthlyCap) {
+      usageLimitHit = true;
+    } else if (!checkDailyCap(subscriberEmail, subscriberPlan)) {
+      usageLimitHit = true;
+    } else {
+      // Increment usage counter in DB (non-blocking)
+      db.update(subscribers)
+        .set({ validationsUsed: monthlyUsed + 1, updatedAt: new Date() })
+        .where(eq(subscribers.email, subscriberEmail.toLowerCase()))
+        .catch(() => {});
+      
+      triggerGuardianAsync(idea, audience, subscriberEmail, subscriberPlan).catch(err => 
+        console.error('[VaaS] Guardian trigger failed:', err)
+      );
+      debateTriggered = true;
+    }
   }
 
   // ── Instant: Local Pattern Matching (all users get this immediately) ──
@@ -245,8 +287,8 @@ export async function POST(request: NextRequest) {
         tier: confidence >= 75 ? 'strong_candidate' : 'moderate_candidate',
       }
     } : {}),
-    // Let paid users know deeper analysis is coming
-    ...(isPaid && subscriberEmail ? {
+    // Let paid users know deeper analysis is coming (or capped)
+    ...(isPaid && subscriberEmail && !usageLimitHit ? {
       deepValidation: {
         status: 'running',
         tier: subscriberPlan,
@@ -255,10 +297,15 @@ export async function POST(request: NextRequest) {
           : 'Guardian adversarial debate running (5-7 min). Results emailed to you.',
         email: subscriberEmail,
       }
+    } : isPaid && usageLimitHit ? {
+      deepValidation: {
+        status: 'limit_reached',
+        message: `Usage limit reached (${MONTHLY_CAPS[subscriberPlan] || 30}/month or ${DAILY_CAPS[subscriberPlan] || 5}/day). Instant results still work. Limits reset at your next billing period.`,
+      }
     } : !isPaid ? {
       deepValidation: {
         status: 'upgrade',
-        message: 'Upgrade to Pro for full adversarial validation, or Enterprise for complete market research dossier.',
+        message: 'Upgrade to Guardian Debate for full adversarial validation, or Venture Verdict for complete market research dossier.',
       }
     } : {}),
   });
