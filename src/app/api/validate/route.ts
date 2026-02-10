@@ -117,88 +117,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Deep Validation via Greenbelt Guardian (if available) ──
-  const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
-  const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
-
-  try {
-    const guardianRes = await fetch(`${ORCHESTRATOR_URL}/api/guardian/validate-idea`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: GUARDIAN_SECRET, idea, audience, model }),
-      signal: AbortSignal.timeout(120_000), // 2 min timeout for full debate
-    });
-
-    if (guardianRes.ok) {
-      const guardian = await guardianRes.json();
-      if (guardian.success) {
-        console.log(`[VaaS] ✅ Guardian deep validation: ${guardian.verdict} (${guardian.confidence}%)`);
-
-        // Map Guardian verdict to VaaS format
-        const verdictMap: Record<string, string> = {
-          'STRONG_GO': '🟢 Strong signal — Guardian validated',
-          'CONDITIONAL_GO': '🟡 Conditional — Guardian identified conditions',
-          'PIVOT_REQUIRED': '🟠 Pivot needed — Guardian found critical issues',
-          'NO_GO': '🔴 No go — Guardian killed this idea',
-        };
-
-        const risks = (guardian.unresolvedRisks || []).map((r: any) => `[${r.severity}] ${r.risk}${r.mitigation ? ` → ${r.mitigation}` : ''}`);
-        const strengths = guardian.validatedStrengths || [];
-        const confidence = Math.max(5, Math.min(95, guardian.confidence));
-
-        const fingerprint = crypto.createHash('sha256').update(`${ip}:${request.headers.get('user-agent') || ''}`).digest('hex').slice(0, 16);
-        const category = detectCategory(idea.toLowerCase());
-        const ecosystem = detectEcosystem(idea.toLowerCase());
-
-        captureSubmission({
-          idea: idea.slice(0, 2000),
-          audience: audience?.slice(0, 500),
-          revenueModel: model,
-          confidence,
-          verdict: verdictMap[guardian.verdict] || guardian.verdict,
-          risks,
-          strengths,
-          recommendations: guardian.nextSteps || [],
-          patternsMatched: (guardian.graveyardLessonsApplied || []).length,
-          category,
-          ecosystem,
-          fingerprint,
-        }).catch((err) => console.error('[VaaS] Submission capture error:', err));
-
-        return NextResponse.json({
-          confidence,
-          verdict: verdictMap[guardian.verdict] || guardian.verdict,
-          summary: guardian.executiveSummary || '',
-          risks,
-          strengths,
-          recommendations: guardian.nextSteps || [],
-          patternsMatched: (guardian.graveyardLessonsApplied || []).length,
-          validatedAt: new Date().toISOString(),
-          source: 'guardian', // Flag that this used full pipeline
-          debate: {
-            totalRounds: guardian.totalRounds,
-            builderWins: guardian.builderWins,
-            guardianWins: guardian.guardianWins,
-            keyMoments: guardian.keyDebateMoments,
-            proceedConditions: guardian.proceedConditions,
-            graveyardLessons: guardian.graveyardLessonsApplied,
-          },
-          ...(confidence >= 50 ? {
-            buildCta: {
-              message: 'Want us to build this for you? Our AI factory produces production-grade apps in days, not months.',
-              url: '/build',
-              tier: confidence >= 75 ? 'strong_candidate' : 'moderate_candidate',
-            }
-          } : {}),
-        });
-      }
-    }
-    console.warn(`[VaaS] Guardian unavailable or failed, falling back to local patterns`);
-  } catch (err) {
-    console.warn(`[VaaS] Guardian call failed, using local patterns:`, err instanceof Error ? err.message : err);
+  // ── For paid users: also trigger full Guardian debate (async, results emailed) ──
+  if (isPaid && subscriberEmail) {
+    triggerGuardianDebate(idea, audience, subscriberEmail).catch(err => 
+      console.error('[VaaS] Guardian async trigger failed:', err)
+    );
   }
 
-  // ── Fallback: Local Pattern Matching ──
+  // ── Instant: Local Pattern Matching (all users get this immediately) ──
   const ideaLower = idea.toLowerCase();
   const audienceLower = (audience || '').toLowerCase();
   const combined = `${ideaLower} ${audienceLower} ${model || ''}`;
@@ -314,6 +240,19 @@ export async function POST(request: NextRequest) {
         tier: confidence >= 75 ? 'strong_candidate' : 'moderate_candidate',
       }
     } : {}),
+    // Let paid users know deeper analysis is coming
+    ...(isPaid && subscriberEmail ? {
+      deepValidation: {
+        status: 'running',
+        message: 'Full Guardian adversarial debate is running (5-7 min). Results will be emailed to you.',
+        email: subscriberEmail,
+      }
+    } : !isPaid ? {
+      deepValidation: {
+        status: 'upgrade',
+        message: 'Upgrade to Pro for full adversarial validation — 3-round Builder vs Guardian debate with detailed report.',
+      }
+    } : {}),
   });
 }
 
@@ -389,5 +328,96 @@ async function captureSubmission(data: {
     )`;
   } catch (err) {
     console.error('[VaaS] Submission capture failed:', err);
+  }
+}
+
+// ── Guardian Deep Validation (async, for paid subscribers) ──
+async function triggerGuardianDebate(idea: string, audience: string | undefined, email: string) {
+  const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
+  const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
+
+  console.log(`[VaaS] 🎯 Triggering Guardian debate for paid user: ${email}`);
+
+  try {
+    const res = await fetch(`${ORCHESTRATOR_URL}/api/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: GUARDIAN_SECRET,
+        name: idea.slice(0, 100),
+        description: idea,
+        targetMarket: audience,
+      }),
+      signal: AbortSignal.timeout(600_000), // 10 min for full 3-round debate
+    });
+
+    if (!res.ok) {
+      console.error(`[VaaS] Guardian returned ${res.status}:`, await res.text());
+      return;
+    }
+
+    const result = await res.json();
+    console.log(`[VaaS] ✅ Guardian debate complete: ${result.verdict?.verdict} (${result.verdict?.verdictConfidence}%)`);
+
+    // Email the full report to subscriber
+    if (process.env.RESEND_API_KEY) {
+      const verdict = result.verdict || {};
+      const rounds = result.rounds || [];
+
+      const roundsHtml = rounds.map((r: any) => `
+        <div style="margin-bottom:16px;padding:12px;background:#1a1a2e;border-radius:8px;">
+          <strong>Round ${r.round}</strong><br/>
+          <div style="color:#4ade80;margin:8px 0;">🏗️ Builder: ${(r.builderPosition || '').slice(0, 300)}</div>
+          <div style="color:#f87171;">🛡️ Guardian: ${(r.guardianChallenge || '').slice(0, 300)}</div>
+        </div>
+      `).join('');
+
+      const verdictColor = verdict.verdict === 'STRONG_GO' ? '#4ade80' 
+        : verdict.verdict === 'CONDITIONAL_GO' ? '#facc15'
+        : verdict.verdict === 'PIVOT_REQUIRED' ? '#fb923c' : '#f87171';
+
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'VaaS <noreply@projectgreenbelt.com>',
+          to: email,
+          subject: `Guardian Report: ${verdict.verdict || 'Complete'} — "${idea.slice(0, 60)}..."`,
+          html: `
+            <div style="font-family:system-ui;max-width:600px;margin:0 auto;background:#0f0f23;color:#e2e8f0;padding:32px;border-radius:12px;">
+              <h1 style="color:${verdictColor};font-size:28px;margin-bottom:8px;">${verdict.verdict || 'Analysis Complete'}</h1>
+              <p style="color:#94a3b8;font-size:14px;">Confidence: ${verdict.verdictConfidence || 0}% · ${result.rounds?.length || 0} debate rounds · $${(result.totalCostUsd || 0).toFixed(3)} AI cost</p>
+              
+              <h2 style="color:#e2e8f0;margin-top:24px;">Executive Summary</h2>
+              <p style="color:#cbd5e1;">${verdict.synthesis || verdict.executiveSummary || 'No summary available.'}</p>
+              
+              <h2 style="color:#4ade80;margin-top:24px;">✅ Validated Strengths</h2>
+              <ul style="color:#cbd5e1;">${(verdict.survivingStrengths || []).map((s: string) => `<li>${s}</li>`).join('')}</ul>
+              
+              <h2 style="color:#f87171;margin-top:24px;">⚠️ Unresolved Concerns</h2>
+              <ul style="color:#cbd5e1;">${(verdict.validatedConcerns || []).map((c: string) => `<li>${c}</li>`).join('')}</ul>
+              
+              <h2 style="color:#e2e8f0;margin-top:24px;">Debate Transcript</h2>
+              ${roundsHtml}
+              
+              <h2 style="color:#e2e8f0;margin-top:24px;">Next Steps</h2>
+              <ul style="color:#cbd5e1;">${(verdict.mitigationStrategies || []).map((s: string) => `<li>${s}</li>`).join('')}</ul>
+              
+              <hr style="border-color:#334155;margin:24px 0;" />
+              <p style="color:#64748b;font-size:12px;">
+                Powered by Greenbelt Guardian · Builder vs Guardian adversarial validation<br/>
+                <a href="https://vaas-greenbelt.vercel.app" style="color:#4ade80;">vaas-greenbelt.vercel.app</a>
+              </p>
+            </div>
+          `,
+        }),
+      });
+      console.log(`[VaaS] 📧 Guardian report emailed to ${email}`);
+    }
+  } catch (err) {
+    console.error(`[VaaS] Guardian debate failed:`, err instanceof Error ? err.message : err);
   }
 }
