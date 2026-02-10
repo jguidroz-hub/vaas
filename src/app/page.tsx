@@ -298,6 +298,8 @@ export default function Home() {
                 <CompareRow feature="Unfair advantage analysis" free="—" pro="—" enterprise="✅" />
                 <CompareRow feature="API access" free="—" pro="✅" enterprise="✅" />
                 <CompareRow feature="Email verification" free="Not required" pro="✅ Secure" enterprise="✅ Secure" />
+                <CompareRow feature="Annual pricing" free="—" pro="$249/yr (save 28%)" enterprise="$1,499/yr (save 37%)" />
+                <CompareRow feature="Per-report option" free="—" pro="$14.99 one-time" enterprise="$49.99 one-time" />
               </tbody>
             </table>
           </div>
@@ -305,42 +307,7 @@ export default function Home() {
 
         {/* ─── Pricing ───────────────────────────────────── */}
         <section className="py-20" id="pricing">
-          <h2 className="text-3xl font-bold text-center mb-4">Start free. Upgrade when it matters.</h2>
-          <p className="text-gray-400 text-center mb-12">No credit card required for Quick Check.</p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <PriceCard
-              tier="Quick Check"
-              tagline="Instant pattern scan"
-              price="$0"
-              period=""
-              features={['30 failure patterns tested', 'Confidence score & risks', 'Category detection', '5 validations per hour']}
-              cta="Start Free ↑"
-              highlight={false}
-              scrollTo="validate"
-            />
-            <PriceCard
-              tier="Guardian Debate"
-              tagline="Put your idea on trial"
-              price="$29"
-              period="/mo"
-              features={['Everything in Quick Check', '⚔️ 3-round adversarial AI debate', 'Builder defends, Guardian attacks', 'Graveyard: 1,310+ failures matched', 'Full report emailed (~7 min)', '30 debates/month (5/day)', 'API access']}
-              cta="Subscribe — $29/mo"
-              highlight={true}
-              plan="pro"
-            />
-            <PriceCard
-              tier="Venture Verdict"
-              tagline="Know your market before you build"
-              price="$199"
-              period="/mo"
-              features={['Everything in Guardian Debate', '📊 Perplexity live market research', 'TAM/SAM/SOM market sizing', 'Competitor & funding analysis', 'Revenue model assessment', 'Full dossier emailed (~12 min)', '50 verdicts/month (10/day)']}
-              cta="Subscribe — $199/mo"
-              highlight={false}
-              plan="enterprise"
-              accent="purple"
-            />
-          </div>
+          <PricingSection />
         </section>
 
         {/* ─── Build with Greenbelt ──────────────────────── */}
@@ -484,6 +451,109 @@ function CompareRow({ feature, free, pro, enterprise }: { feature: string; free:
       <td className="py-3 px-4 text-center">{pro}</td>
       <td className="py-3 px-4 text-center">{enterprise}</td>
     </tr>
+  );
+}
+
+function PricingSection() {
+  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly');
+  
+  return (
+    <>
+      <h2 className="text-3xl font-bold text-center mb-4">Start free. Upgrade when it matters.</h2>
+      <p className="text-gray-400 text-center mb-6">No credit card required for Quick Check.</p>
+      
+      {/* Billing toggle */}
+      <div className="flex items-center justify-center gap-3 mb-8">
+        <span className={`text-sm ${billing === 'monthly' ? 'text-white' : 'text-gray-500'}`}>Monthly</span>
+        <button onClick={() => setBilling(b => b === 'monthly' ? 'annual' : 'monthly')}
+          className="relative w-12 h-6 bg-gray-700 rounded-full transition-colors cursor-pointer"
+          style={{ backgroundColor: billing === 'annual' ? '#16a34a' : undefined }}>
+          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${billing === 'annual' ? 'translate-x-6' : 'translate-x-0.5'}`} />
+        </button>
+        <span className={`text-sm ${billing === 'annual' ? 'text-white' : 'text-gray-500'}`}>Annual</span>
+        {billing === 'annual' && <span className="text-green-400 text-xs font-medium bg-green-500/10 px-2 py-0.5 rounded-full">Save up to 37%</span>}
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto mb-10">
+        <PriceCard
+          tier="Quick Check"
+          tagline="Instant pattern scan"
+          price="$0"
+          period=""
+          features={['30 failure patterns tested', 'Confidence score & risks', 'Category detection', '5 validations per hour']}
+          cta="Start Free ↑"
+          highlight={false}
+          scrollTo="validate"
+        />
+        <PriceCard
+          tier="Guardian Debate"
+          tagline="Put your idea on trial"
+          price={billing === 'annual' ? '$249' : '$29'}
+          period={billing === 'annual' ? '/yr' : '/mo'}
+          features={[
+            'Everything in Quick Check',
+            '⚔️ 3-round adversarial AI debate',
+            'Builder defends, Guardian attacks',
+            'Graveyard: 1,310+ failures matched',
+            'Full report emailed + PDF (~7 min)',
+            '30 debates/month (5/day)',
+            'API access',
+            ...(billing === 'annual' ? ['💰 Save 28% vs monthly'] : []),
+          ]}
+          cta={billing === 'annual' ? 'Subscribe — $249/yr' : 'Subscribe — $29/mo'}
+          highlight={true}
+          plan={billing === 'annual' ? 'pro_annual' : 'pro'}
+        />
+        <PriceCard
+          tier="Venture Verdict"
+          tagline="Know your market before you build"
+          price={billing === 'annual' ? '$1,499' : '$199'}
+          period={billing === 'annual' ? '/yr' : '/mo'}
+          features={[
+            'Everything in Guardian Debate',
+            '📊 Perplexity live market research',
+            'TAM/SAM/SOM market sizing',
+            'Competitor & funding analysis',
+            'Revenue model assessment',
+            'Full dossier emailed + PDF (~12 min)',
+            '50 verdicts/month (10/day)',
+            ...(billing === 'annual' ? ['💰 Save 37% vs monthly'] : []),
+          ]}
+          cta={billing === 'annual' ? 'Subscribe — $1,499/yr' : 'Subscribe — $199/mo'}
+          highlight={false}
+          plan={billing === 'annual' ? 'enterprise_annual' : 'enterprise'}
+          accent="purple"
+        />
+      </div>
+
+      {/* Per-report option */}
+      <div className="max-w-2xl mx-auto bg-gray-900/50 border border-gray-800 rounded-xl p-6 text-center">
+        <p className="text-gray-400 text-sm mb-3">Just need one report? No subscription required.</p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <OneTimeButton plan="single_debate" label="Single Guardian Debate — $14.99" />
+          <OneTimeButton plan="single_verdict" label="Single Venture Verdict — $49.99" />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function OneTimeButton({ plan, label }: { plan: string; label: string }) {
+  const [loading, setLoading] = useState(false);
+  async function handleClick() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }
+  return (
+    <button onClick={handleClick} disabled={loading}
+      className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition-all disabled:opacity-50 cursor-pointer">
+      {loading ? '...' : label}
+    </button>
   );
 }
 
