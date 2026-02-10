@@ -44,17 +44,91 @@ function CheckoutBanner() {
 
 function SubscriberLogin() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
   const [auth, setAuth] = useState<{ authenticated: boolean; email?: string; plan?: string } | null>(null);
 
   useEffect(() => {
     fetch('/api/auth').then(r => r.json()).then(setAuth).catch(() => {});
-  }, [status]);
+  }, []);
+
+  // Re-check auth after successful login
+  const refreshAuth = () => fetch('/api/auth').then(r => r.json()).then(setAuth).catch(() => {});
 
   if (auth?.authenticated) {
     return (
       <div className="text-sm text-gray-400 text-right">
         ✅ <span className="text-green-400">{auth.plan?.toUpperCase()}</span> — {auth.email}
+      </div>
+    );
+  }
+
+  const handleSendCode = async () => {
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (res.ok && data.codeSent) {
+        setStep('code');
+        setStatus('idle');
+      } else {
+        setErrorMsg(data.error || 'Not found');
+        setStatus('error');
+      }
+    } catch { setErrorMsg('Network error'); setStatus('error'); }
+  };
+
+  const handleVerifyCode = async () => {
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+      const data = await res.json();
+      if (res.ok && data.authenticated) {
+        setStatus('idle');
+        refreshAuth();
+      } else {
+        setErrorMsg(data.error || 'Invalid code');
+        setStatus('error');
+      }
+    } catch { setErrorMsg('Network error'); setStatus('error'); }
+  };
+
+  if (step === 'code') {
+    return (
+      <div className="flex items-center gap-2 justify-end text-sm">
+        <span className="text-gray-500">Code sent to {email}</span>
+        <input
+          type="text"
+          value={code}
+          onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="123456"
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 text-sm w-24 text-center tracking-widest"
+          maxLength={6}
+          autoFocus
+        />
+        <button
+          onClick={handleVerifyCode}
+          disabled={status === 'loading' || code.length !== 6}
+          className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm disabled:opacity-50"
+        >
+          {status === 'loading' ? '...' : 'Verify'}
+        </button>
+        <button onClick={() => { setStep('email'); setCode(''); setErrorMsg(''); }} className="text-gray-500 hover:text-gray-300 text-xs">
+          ← Back
+        </button>
+        {errorMsg && <span className="text-red-400 text-xs">{errorMsg}</span>}
       </div>
     );
   }
@@ -70,24 +144,13 @@ function SubscriberLogin() {
         className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 text-sm w-48"
       />
       <button
-        onClick={async () => {
-          setStatus('loading');
-          try {
-            const res = await fetch('/api/auth', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email }),
-            });
-            if (res.ok) setStatus('success');
-            else setStatus('error');
-          } catch { setStatus('error'); }
-        }}
-        disabled={status === 'loading'}
+        onClick={handleSendCode}
+        disabled={status === 'loading' || !email.includes('@')}
         className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-sm disabled:opacity-50"
       >
         {status === 'loading' ? '...' : 'Log In'}
       </button>
-      {status === 'error' && <span className="text-red-400 text-xs">Not found</span>}
+      {errorMsg && <span className="text-red-400 text-xs">{errorMsg}</span>}
     </div>
   );
 }
