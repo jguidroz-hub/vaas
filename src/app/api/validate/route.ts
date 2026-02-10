@@ -117,6 +117,88 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── Deep Validation via Greenbelt Guardian (if available) ──
+  const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
+  const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
+
+  try {
+    const guardianRes = await fetch(`${ORCHESTRATOR_URL}/api/guardian/validate-idea`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: GUARDIAN_SECRET, idea, audience, model }),
+      signal: AbortSignal.timeout(120_000), // 2 min timeout for full debate
+    });
+
+    if (guardianRes.ok) {
+      const guardian = await guardianRes.json();
+      if (guardian.success) {
+        console.log(`[VaaS] ✅ Guardian deep validation: ${guardian.verdict} (${guardian.confidence}%)`);
+
+        // Map Guardian verdict to VaaS format
+        const verdictMap: Record<string, string> = {
+          'STRONG_GO': '🟢 Strong signal — Guardian validated',
+          'CONDITIONAL_GO': '🟡 Conditional — Guardian identified conditions',
+          'PIVOT_REQUIRED': '🟠 Pivot needed — Guardian found critical issues',
+          'NO_GO': '🔴 No go — Guardian killed this idea',
+        };
+
+        const risks = (guardian.unresolvedRisks || []).map((r: any) => `[${r.severity}] ${r.risk}${r.mitigation ? ` → ${r.mitigation}` : ''}`);
+        const strengths = guardian.validatedStrengths || [];
+        const confidence = Math.max(5, Math.min(95, guardian.confidence));
+
+        const fingerprint = crypto.createHash('sha256').update(`${ip}:${request.headers.get('user-agent') || ''}`).digest('hex').slice(0, 16);
+        const category = detectCategory(idea.toLowerCase());
+        const ecosystem = detectEcosystem(idea.toLowerCase());
+
+        captureSubmission({
+          idea: idea.slice(0, 2000),
+          audience: audience?.slice(0, 500),
+          revenueModel: model,
+          confidence,
+          verdict: verdictMap[guardian.verdict] || guardian.verdict,
+          risks,
+          strengths,
+          recommendations: guardian.nextSteps || [],
+          patternsMatched: (guardian.graveyardLessonsApplied || []).length,
+          category,
+          ecosystem,
+          fingerprint,
+        }).catch((err) => console.error('[VaaS] Submission capture error:', err));
+
+        return NextResponse.json({
+          confidence,
+          verdict: verdictMap[guardian.verdict] || guardian.verdict,
+          summary: guardian.executiveSummary || '',
+          risks,
+          strengths,
+          recommendations: guardian.nextSteps || [],
+          patternsMatched: (guardian.graveyardLessonsApplied || []).length,
+          validatedAt: new Date().toISOString(),
+          source: 'guardian', // Flag that this used full pipeline
+          debate: {
+            totalRounds: guardian.totalRounds,
+            builderWins: guardian.builderWins,
+            guardianWins: guardian.guardianWins,
+            keyMoments: guardian.keyDebateMoments,
+            proceedConditions: guardian.proceedConditions,
+            graveyardLessons: guardian.graveyardLessonsApplied,
+          },
+          ...(confidence >= 50 ? {
+            buildCta: {
+              message: 'Want us to build this for you? Our AI factory produces production-grade apps in days, not months.',
+              url: '/build',
+              tier: confidence >= 75 ? 'strong_candidate' : 'moderate_candidate',
+            }
+          } : {}),
+        });
+      }
+    }
+    console.warn(`[VaaS] Guardian unavailable or failed, falling back to local patterns`);
+  } catch (err) {
+    console.warn(`[VaaS] Guardian call failed, using local patterns:`, err instanceof Error ? err.message : err);
+  }
+
+  // ── Fallback: Local Pattern Matching ──
   const ideaLower = idea.toLowerCase();
   const audienceLower = (audience || '').toLowerCase();
   const combined = `${ideaLower} ${audienceLower} ${model || ''}`;
