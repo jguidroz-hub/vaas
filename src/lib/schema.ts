@@ -1,7 +1,7 @@
 import { pgTable, text, integer, timestamp, jsonb, uuid, boolean } from 'drizzle-orm/pg-core';
 
 // ── Validation Submissions (the flywheel data) ──────────────
-export const submissions = pgTable('submissions', {
+export const submissions = pgTable('vaas_submissions', {
   id: uuid('id').defaultRandom().primaryKey(),
   
   // What they submitted

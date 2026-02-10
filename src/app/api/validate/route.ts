@@ -179,6 +179,7 @@ export async function POST(request: NextRequest) {
   const category = detectCategory(ideaLower);
   const ecosystem = detectEcosystem(ideaLower);
 
+  // Non-blocking data capture — fire and forget but log errors
   captureSubmission({
     idea: idea.slice(0, 2000), // Truncate for storage
     audience: audience?.slice(0, 500),
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
     category,
     ecosystem,
     fingerprint,
-  }).catch(() => {}); // Fire and forget
+  }).catch((err) => console.error('[VaaS] Submission capture error:', err)); // Fire and forget
 
   return NextResponse.json({
     confidence,
