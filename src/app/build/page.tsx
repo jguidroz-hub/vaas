@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { Suspense } from 'react';
 
-export default function BuildPage() {
+function BuildPageInner() {
+  const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [idea, setIdea] = useState('');
@@ -13,6 +16,17 @@ export default function BuildPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Prefill from Guardian email CTA
+  useEffect(() => {
+    if (params.get('idea')) setIdea(decodeURIComponent(params.get('idea')!));
+    if (params.get('email')) setEmail(decodeURIComponent(params.get('email')!));
+    if (params.get('verdict')) {
+      const v = params.get('verdict');
+      const c = params.get('confidence');
+      setContext(`Guardian Verdict: ${v} (${c}% confidence)`);
+    }
+  }, [params]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -221,6 +235,10 @@ export default function BuildPage() {
       </section>
     </main>
   );
+}
+
+export default function BuildPage() {
+  return <Suspense fallback={null}><BuildPageInner /></Suspense>;
 }
 
 function Feature({ icon, title, desc }: { icon: string; title: string; desc: string }) {
