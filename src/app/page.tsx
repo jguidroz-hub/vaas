@@ -149,6 +149,7 @@ export default function Home() {
           <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
           <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
           <a href="#compare" className="hover:text-white transition-colors">Compare</a>
+          <a href="/generate" className="hover:text-white transition-colors">💡 Generate</a>
         </div>
       </nav>
 
@@ -169,9 +170,14 @@ export default function Home() {
             Builder AI defends your idea. Guardian AI tries to destroy it. Three rounds. One verdict.
             Based on 1,310+ real startup failures — not opinions.
           </p>
-          <a href="#validate" className="inline-block bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-all shadow-[0_0_30px_rgba(34,197,94,0.2)] hover:shadow-[0_0_40px_rgba(34,197,94,0.3)]">
-            Validate Your Idea — Free →
-          </a>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <a href="#validate" className="inline-block bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-all shadow-[0_0_30px_rgba(34,197,94,0.2)] hover:shadow-[0_0_40px_rgba(34,197,94,0.3)]">
+              Validate Your Idea — Free →
+            </a>
+            <a href="/generate" className="inline-block bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-4 px-8 rounded-xl text-lg transition-all border border-gray-700">
+              💡 Don&apos;t have an idea?
+            </a>
+          </div>
         </section>
 
         {/* ─── Social Proof Bar ──────────────────────────── */}
