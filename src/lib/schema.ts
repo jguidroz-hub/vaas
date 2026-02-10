@@ -85,6 +85,38 @@ export const subscribers = pgTable('subscribers', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// ── Reports (Guardian + Venture Verdict results) ────────────
+export const reports = pgTable('reports', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  
+  // Input
+  idea: text('idea').notNull(),
+  audience: text('audience'),
+  revenueModel: text('revenue_model'),
+  
+  // Result
+  tier: text('tier').notNull(), // 'pro' or 'enterprise'
+  verdict: text('verdict'), // STRONG_GO, CONDITIONAL_GO, PIVOT_REQUIRED, NO_GO
+  confidence: integer('confidence'),
+  executiveSummary: text('executive_summary'),
+  
+  // Debate
+  debateRounds: jsonb('debate_rounds').$type<any[]>().default([]),
+  strengths: jsonb('strengths').$type<string[]>().default([]),
+  risks: jsonb('risks').$type<string[]>().default([]),
+  proceedConditions: jsonb('proceed_conditions').$type<string[]>().default([]),
+  
+  // Enterprise enrichment
+  enrichment: jsonb('enrichment'), // Full enriched idea data (TAM, competitors, etc.)
+  
+  // Meta
+  email: text('email').notNull(),
+  totalCostUsd: text('total_cost_usd'),
+  durationSeconds: integer('duration_seconds'),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ── Aggregate Market Signals (for Greenbelt Discovery) ──────
 export const marketSignals = pgTable('market_signals', {
   id: uuid('id').defaultRandom().primaryKey(),
