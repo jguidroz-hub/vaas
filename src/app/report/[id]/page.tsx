@@ -259,17 +259,17 @@ export default function ReportPage() {
                 <div key={i} className="border-l-2 border-gray-700 pl-4">
                   <div className="text-sm font-semibold text-gray-400 mb-2">Round {i + 1}</div>
                   
-                  {(round.attack || round.flaw || round.argument) && (
+                  {(round.guardian || round.attack || round.flaw || round.argument) && (
                     <div className="mb-3">
                       <div className="text-xs text-red-400 uppercase tracking-wider mb-1">Guardian Attack</div>
-                      <p className="text-gray-300 text-sm">{round.attack || round.flaw || round.argument}</p>
+                      <p className="text-gray-300 text-sm">{round.guardian || round.attack || round.flaw || round.argument}</p>
                     </div>
                   )}
                   
-                  {(round.rebuttal || round.defense) && (
+                  {(round.builder || round.rebuttal || round.defense) && (
                     <div>
                       <div className="text-xs text-green-400 uppercase tracking-wider mb-1">Builder Defense</div>
-                      <p className="text-gray-300 text-sm">{round.rebuttal || round.defense}</p>
+                      <p className="text-gray-300 text-sm">{round.builder || round.rebuttal || round.defense}</p>
                     </div>
                   )}
                 </div>
