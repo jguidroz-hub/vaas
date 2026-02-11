@@ -306,7 +306,6 @@ export async function POST(request: NextRequest) {
   // ── Flywheel: Capture submission data ──
   // Non-blocking — never let DB failures break the validation response
   const fingerprint = crypto.createHash('sha256').update(`${ip}:${request.headers.get('user-agent') || ''}`).digest('hex').slice(0, 16);
-  const category = detectCategory(ideaLower);
   const ecosystem = detectEcosystem(ideaLower);
 
   // Non-blocking data capture — fire and forget but log errors
