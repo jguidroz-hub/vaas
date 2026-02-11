@@ -9,11 +9,13 @@ export const metadata: Metadata = {
     description: 'Builder AI defends your idea. Guardian AI tries to destroy it. Three rounds. One verdict. Based on 1,310+ real startup failures.',
     type: 'website',
     url: 'https://vaas-greenbelt.vercel.app',
+    images: [{ url: 'https://vaas-greenbelt.vercel.app/og-image.png', width: 1200, height: 630, alt: 'VaaS by Greenbelt — Adversarial Startup Validation' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'VaaS — Your Idea Gets a Verdict, Not a Vibe Check',
     description: 'Adversarial AI validation scored against 1,310+ startup failures. Free.',
+    images: ['https://vaas-greenbelt.vercel.app/og-image.png'],
   },
 };
 
