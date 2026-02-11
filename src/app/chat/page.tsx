@@ -42,6 +42,10 @@ const FLOW_STEPS = [
   },
   {
     id: 'expertise',
+    message: "Perfect. **What's your email?** We'll send your validation results there. (Required for Guardian debate results — they take 5-7 minutes to run.)",
+  },
+  {
+    id: 'email',
     message: '', // Terminal step — summary generated in code
   },
 ];
@@ -118,7 +122,7 @@ export default function ChatIntake() {
   }
 
   function buildSummary(a: Record<string, string>): string {
-    return `Great, here's what I've captured:\n\n**Problem:** ${a.problem || a.greeting}\n**Audience:** ${a.audience || a.problem}\n**Current solutions:** ${a.existing || 'None mentioned'}\n**Your solution:** ${a.solution}\n**Differentiator:** ${a.differentiation}\n**Revenue model:** ${a.model}\n${a.expertise ? `**Your edge:** ${a.expertise}` : ''}\n\nReady to submit this to the Guardian? 👇`;
+    return `Great, here's what I've captured:\n\n**Problem:** ${a.problem || a.greeting}\n**Audience:** ${a.audience || a.problem}\n**Current solutions:** ${a.existing || 'None mentioned'}\n**Your solution:** ${a.solution}\n**Differentiator:** ${a.differentiation}\n**Revenue model:** ${a.model}\n${a.expertise ? `**Your edge:** ${a.expertise}` : ''}\n**Results to:** ${a.email}\n\nReady to submit this to the Guardian? 👇`;
   }
 
   function buildIdeaText(a: Record<string, string>): string {
@@ -136,14 +140,41 @@ export default function ChatIntake() {
     const ideaText = buildIdeaText(answers);
     const audience = answers.audience || answers.problem || '';
     const model = MODEL_MAP[answers.model] || 'subscription';
+    const email = answers.email || '';
 
-    // Store in sessionStorage so the main page can pick it up
-    sessionStorage.setItem('vaas_prefill', JSON.stringify({
-      idea: ideaText,
-      audience,
-      model,
-    }));
-    router.push('/?prefill=chat');
+    try {
+      const res = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea: ideaText, audience, model }),
+      });
+      const data = await res.json();
+      
+      // Show results inline
+      const score = data.score ?? data.confidence ?? '?';
+      const verdict = data.guardianDebate?.verdict || (score >= 70 ? 'Promising' : score >= 40 ? 'Needs work' : 'High risk');
+      
+      const resultMsg = `## Results: ${score}% — ${verdict}\n\n${
+        data.risks?.length ? `**Risks identified:**\n${data.risks.map((r: any) => `• ${typeof r === 'string' ? r : r.risk || r.pattern || JSON.stringify(r)}`).join('\n')}` : ''
+      }\n\n${
+        data.strengths?.length ? `**Strengths:**\n${data.strengths.map((s: any) => `• ${typeof s === 'string' ? s : s.strength || JSON.stringify(s)}`).join('\n')}` : ''
+      }\n\n${
+        data.guardianDebate?.status === 'running' 
+          ? `⚔️ **Full Guardian debate is running** — results will be emailed to ${email} in 5-7 minutes.`
+          : data.guardianDebate?.status === 'error'
+          ? '⚠️ Guardian debate service unavailable right now. Your instant results are shown above.'
+          : '💡 Upgrade to Pro for a full adversarial Guardian debate with detailed transcript.'
+      }\n\n[View full results →](/?prefill=chat)`;
+
+      setMessages(prev => [...prev, { role: 'assistant', text: resultMsg }]);
+      
+      // Also store for the main page if they want to see more
+      sessionStorage.setItem('vaas_prefill', JSON.stringify({ idea: ideaText, audience, model }));
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', text: '❌ Something went wrong submitting your idea. Please try again or use the [main form](/) directly.' }]);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
