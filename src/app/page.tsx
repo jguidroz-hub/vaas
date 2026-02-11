@@ -432,9 +432,12 @@ export default function Home() {
         </section>
 
         {/* ─── Footer ────────────────────────────────────── */}
-        <footer className="py-12 border-t border-gray-800/50 text-center">
+        <footer className="py-12 border-t border-gray-800/50 text-center space-y-2">
           <p className="text-gray-500 text-sm">
             VaaS by <a href="https://projectgreenbelt.com" className="text-green-400 hover:underline">Greenbelt</a> — Validation-as-a-Service for founders who want truth, not comfort.
+          </p>
+          <p className="text-gray-600 text-xs">
+            Questions? <a href="mailto:support@projectgreenbelt.com" className="text-gray-400 hover:text-green-400">support@projectgreenbelt.com</a>
           </p>
         </footer>
       </div>
