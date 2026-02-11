@@ -247,23 +247,42 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Confidence scoring ──
-  let confidence = 60; // Base confidence
+  let confidence = 50; // Base confidence (lowered from 60 for wider range)
 
-  // Penalty for matched failure patterns
-  const riskPenalty = matchedRisks.reduce((sum, r) => sum + r.weight * 15, 0);
-  confidence -= Math.min(riskPenalty, 40);
+  // Penalty for matched failure patterns (stronger differentiation)
+  const riskPenalty = matchedRisks.reduce((sum, r) => sum + r.weight * 20, 0);
+  confidence -= Math.min(riskPenalty, 45);
 
-  // Bonus for strengths
-  confidence += matchedStrengths.length * 5;
+  // Bonus for strengths (scaled by count)
+  confidence += Math.min(matchedStrengths.length * 6, 24);
 
-  // Bonus for specificity (longer, more detailed descriptions score higher)
-  if (idea.length > 200) confidence += 5;
-  if (idea.length > 500) confidence += 3;
-  if (audience && audience.length > 20) confidence += 5;
+  // Specificity bonuses (more granular)
+  if (idea.length > 100) confidence += 3;
+  if (idea.length > 300) confidence += 4;
+  if (idea.length > 600) confidence += 3;
+  if (audience && audience.length > 10) confidence += 3;
+  if (audience && audience.length > 30) confidence += 4;
 
   // Revenue model bonuses
-  if (model === 'marketplace_app') confidence += 3; // Built-in distribution
-  if (model === 'usage_based') confidence += 2; // Aligns cost with value
+  if (model === 'marketplace_app') confidence += 5; // Built-in distribution
+  if (model === 'usage_based') confidence += 3; // Aligns cost with value
+  if (model === 'subscription') confidence += 2; // Predictable revenue
+
+  // Idea quality signals
+  const hasNumbers = /\$[\d,]+|\d+%|\d+x|\d+k|\d+ (users|customers|merchants)/i.test(idea);
+  const hasCompetitorMention = /compet|altern|unlike|better than|compared to/i.test(idea);
+  const hasProblemStatement = /pain|frustrat|struggle|waste|manual|tedious|broken|nightmare|expensive/i.test(idea);
+  const hasMonetization = /pricing|charge|subscri|freemium|tier|premium|pay|revenue/i.test(idea);
+  if (hasNumbers) confidence += 4; // Shows research
+  if (hasCompetitorMention) confidence += 3; // Competitive awareness
+  if (hasProblemStatement) confidence += 4; // Clear pain point
+  if (hasMonetization) confidence += 3; // Thought about revenue
+
+  // Penalty for red flags
+  const isVague = idea.length < 80 && !audience;
+  const isTooGeneric = /app for everything|all-in-one|uber for|airbnb for|the next/i.test(idea);
+  if (isVague) confidence -= 10;
+  if (isTooGeneric) confidence -= 8;
 
   // Clamp
   confidence = Math.max(5, Math.min(95, Math.round(confidence)));

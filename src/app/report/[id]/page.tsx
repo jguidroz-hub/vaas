@@ -261,15 +261,17 @@ export default function ReportPage() {
                   
                   {(round.guardian || round.attack || round.flaw || round.argument) && (
                     <div className="mb-3">
-                      <div className="text-xs text-red-400 uppercase tracking-wider mb-1">Guardian Attack</div>
-                      <p className="text-gray-300 text-sm">{round.guardian || round.attack || round.flaw || round.argument}</p>
+                      <div className="text-xs text-red-400 uppercase tracking-wider mb-1">🛡️ Guardian Attack</div>
+                      <div className="text-gray-300 text-sm whitespace-pre-line leading-relaxed [&>strong]:text-red-300 [&>strong]:font-semibold"
+                        dangerouslySetInnerHTML={{ __html: (round.guardian || round.attack || round.flaw || round.argument || '').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
                     </div>
                   )}
                   
                   {(round.builder || round.rebuttal || round.defense) && (
                     <div>
-                      <div className="text-xs text-green-400 uppercase tracking-wider mb-1">Builder Defense</div>
-                      <p className="text-gray-300 text-sm">{round.builder || round.rebuttal || round.defense}</p>
+                      <div className="text-xs text-green-400 uppercase tracking-wider mb-1">🏗️ Builder Defense</div>
+                      <div className="text-gray-300 text-sm whitespace-pre-line leading-relaxed [&>strong]:text-green-300 [&>strong]:font-semibold"
+                        dangerouslySetInnerHTML={{ __html: (round.builder || round.rebuttal || round.defense || '').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
                     </div>
                   )}
                 </div>
