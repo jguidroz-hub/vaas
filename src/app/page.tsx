@@ -141,6 +141,23 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; text: string } | null>(null);
+
+  // Prefill from chat intake
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('prefill') === 'chat') {
+        try {
+          const data = JSON.parse(sessionStorage.getItem('vaas_prefill') || '{}');
+          if (data.idea) setIdea(data.idea);
+          if (data.audience) setAudience(data.audience);
+          if (data.model) setModel(data.model);
+          sessionStorage.removeItem('vaas_prefill');
+        } catch {}
+      }
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -167,6 +184,7 @@ export default function Home() {
           <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
           <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
           <a href="#compare" className="hover:text-white transition-colors">Compare</a>
+          <a href="/chat" className="hover:text-white transition-colors">💬 Guided</a>
           <a href="/generate" className="hover:text-white transition-colors">💡 Generate</a>
           <a href="/ideas" className="hover:text-white transition-colors">📚 Library</a>
           <a href="/trends" className="hover:text-white transition-colors">📈 Trends</a>
@@ -245,12 +263,56 @@ export default function Home() {
           <div className="bg-gray-900/80 border border-gray-800 rounded-2xl p-8 max-w-3xl mx-auto">
             <h2 className="text-2xl font-bold mb-2">Test your idea</h2>
             <p className="text-gray-400 text-sm mb-6">Free instant results. Subscribers get the full Guardian debate or Venture Verdict emailed automatically.</p>
+            {/* Intake mode toggle */}
+            <div className="flex items-center gap-3 mb-6 text-sm">
+              <span className="text-gray-500">Not sure how to describe it?</span>
+              <a href="/chat" className="text-green-400 hover:text-green-300 font-medium transition-colors">
+                💬 Try guided intake →
+              </a>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label htmlFor="idea" className="block text-sm font-medium text-gray-300 mb-2">Describe your idea *</label>
                 <textarea id="idea" value={idea} onChange={e => setIdea(e.target.value)}
                   placeholder="e.g. An AI tool that helps restaurants instantly find replacement staff when someone calls out sick..."
                   className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-gray-100 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-transparent min-h-[120px] resize-y" required />
+
+                {/* File upload */}
+                <div className="mt-3">
+                  {uploadedFile ? (
+                    <div className="flex items-center gap-2 text-sm text-green-400">
+                      <span>📎 {uploadedFile.name}</span>
+                      <button type="button" onClick={() => setUploadedFile(null)} className="text-gray-500 hover:text-red-400">✕</button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-400 cursor-pointer transition-colors">
+                      <span>📎 Upload a pitch deck, PRD, or doc (PDF, TXT, MD)</span>
+                      <input type="file" accept=".pdf,.txt,.md,.doc,.docx" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          if (file.type === 'application/pdf') {
+                            // For PDFs, send to server for text extraction
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            const res = await fetch('/api/extract-text', { method: 'POST', body: formData });
+                            const data = await res.json();
+                            if (data.text) {
+                              setUploadedFile({ name: file.name, text: data.text });
+                              setIdea(prev => prev ? `${prev}\n\n---\nFrom ${file.name}:\n${data.text.slice(0, 3000)}` : data.text.slice(0, 3000));
+                            }
+                          } else {
+                            // Text files — read directly
+                            const text = await file.text();
+                            setUploadedFile({ name: file.name, text });
+                            setIdea(prev => prev ? `${prev}\n\n---\nFrom ${file.name}:\n${text.slice(0, 3000)}` : text.slice(0, 3000));
+                          }
+                        } catch { /* silently fail */ }
+                      }} />
+                    </label>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
