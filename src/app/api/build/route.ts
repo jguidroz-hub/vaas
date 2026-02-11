@@ -90,8 +90,54 @@ export async function POST(request: NextRequest) {
     console.error('[VaaS] Notification email failed:', err);
   }
 
+  // Send confirmation email to requester (FIX-11)
+  try {
+    if (process.env.RESEND_API_KEY) {
+      const tierInfo: Record<string, { name: string; price: string; timeline: string }> = {
+        starter: { name: 'Starter', price: '$499', timeline: '48 hours' },
+        pro: { name: 'Pro', price: '$1,499', timeline: '1-2 weeks' },
+        enterprise: { name: 'Enterprise', price: '$4,999', timeline: '2-4 weeks' },
+      };
+      const tier = tierInfo[budget || 'pro'] || tierInfo.pro;
+
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'Greenbelt <noreply@projectgreenbelt.com>',
+          to: [email.trim().toLowerCase()],
+          subject: 'We received your build request — next steps',
+          html: `
+            <div style="font-family:system-ui;max-width:560px;margin:0 auto;padding:32px;">
+              <h2 style="color:#111;">Build request received 🏗️</h2>
+              <p style="color:#374151;">Thanks${name ? `, ${name}` : ''}! We've received your <strong>${tier.name}</strong> build request.</p>
+              <div style="background:#f3f4f6;padding:16px;border-radius:8px;margin:16px 0;">
+                <p style="margin:4px 0;color:#374151;"><strong>Tier:</strong> ${tier.name} (${tier.price})</p>
+                <p style="margin:4px 0;color:#374151;"><strong>Typical timeline:</strong> ${tier.timeline}</p>
+                <p style="margin:4px 0;color:#374151;"><strong>Your idea:</strong> ${idea.slice(0, 200)}${idea.length > 200 ? '...' : ''}</p>
+              </div>
+              <p style="color:#374151;"><strong>What happens next:</strong></p>
+              <ol style="color:#374151;line-height:1.8;">
+                <li>We review your request and validation results (within 24 hours)</li>
+                <li>We'll email you with a project scope and any questions</li>
+                <li>Once confirmed, our AI factory begins building</li>
+                <li>You receive a production-ready product with billing and auth</li>
+              </ol>
+              <p style="color:#6b7280;font-size:13px;margin-top:24px;">Questions? Reply to this email. — Greenbelt Team</p>
+            </div>
+          `,
+        }),
+      });
+    }
+  } catch (err) {
+    console.error('[VaaS] Confirmation email failed:', err);
+  }
+
   return NextResponse.json({
     success: true,
-    message: 'Build request received. We\'ll review and respond within 24 hours.',
+    message: 'Build request received! Check your email for confirmation and next steps. We\'ll review and respond within 24 hours.',
   });
 }

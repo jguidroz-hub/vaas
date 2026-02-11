@@ -46,6 +46,42 @@ export async function POST(req: NextRequest) {
             });
           }
           console.log('✅ Subscriber created/updated:', email, plan);
+          
+          // Send welcome email (FIX-7)
+          if (process.env.RESEND_API_KEY) {
+            const planName = plan === 'enterprise' ? 'Venture Verdict' : 'Guardian Debate';
+            const features = plan === 'enterprise' 
+              ? ['Full research dossier (Perplexity + Gemini)', 'Adversarial Guardian debate', 'PDF report export', 'Up to 50 validations/month']
+              : ['Adversarial Guardian debate', 'PDF report export', 'Up to 30 validations/month'];
+            
+            fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                from: 'Greenbelt <noreply@projectgreenbelt.com>',
+                to: email,
+                subject: `Welcome to ${planName} — your account is active`,
+                html: `
+                  <div style="font-family:system-ui;max-width:560px;margin:0 auto;padding:32px;">
+                    <h2 style="color:#111;">Welcome to ${planName} 🎉</h2>
+                    <p style="color:#374151;">Your subscription is active. Here's how to get started:</p>
+                    <ol style="color:#374151;line-height:1.8;">
+                      <li>Go to <a href="https://vaas-greenbelt.vercel.app" style="color:#10b981;">vaas-greenbelt.vercel.app</a></li>
+                      <li>Click <strong>Sign In</strong> and enter your email: <strong>${email}</strong></li>
+                      <li>Enter the verification code we send you</li>
+                      <li>Submit any idea — your ${planName.toLowerCase()} runs automatically</li>
+                    </ol>
+                    <p style="color:#374151;font-weight:600;">What you get:</p>
+                    <ul style="color:#374151;line-height:1.8;">
+                      ${features.map(f => `<li>${f}</li>`).join('')}
+                    </ul>
+                    <p style="color:#374151;">Results are emailed to you within 7-12 minutes of submission, with a shareable PDF report link.</p>
+                    <p style="color:#6b7280;font-size:13px;margin-top:24px;">Questions? Reply to this email. — Greenbelt Team</p>
+                  </div>
+                `,
+              }),
+            }).catch(err => console.error('Welcome email failed:', err));
+          }
         } catch (err: any) {
           console.error('Failed to save subscriber:', err.message);
         }

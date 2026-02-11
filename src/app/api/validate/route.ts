@@ -158,16 +158,25 @@ export async function POST(request: NextRequest) {
     } else if (!checkDailyCap(subscriberEmail, subscriberPlan)) {
       usageLimitHit = true;
     } else {
-      // Increment usage counter in DB (non-blocking)
+      // Increment usage counter BEFORE triggering (optimistic)
       db.update(subscribers)
         .set({ validationsUsed: monthlyUsed + 1, updatedAt: new Date() })
         .where(eq(subscribers.email, subscriberEmail.toLowerCase()))
         .catch(() => {});
+
+      const triggerResult = await triggerGuardianAsync(idea, audience, subscriberEmail, subscriberPlan).catch(err => {
+        console.error('[VaaS] Guardian trigger failed:', err);
+        return null;
+      });
+      debateTriggered = !!triggerResult;
       
-      triggerGuardianAsync(idea, audience, subscriberEmail, subscriberPlan).catch(err => 
-        console.error('[VaaS] Guardian trigger failed:', err)
-      );
-      debateTriggered = true;
+      // Rollback usage if trigger failed (FIX-10)
+      if (!debateTriggered) {
+        db.update(subscribers)
+          .set({ validationsUsed: monthlyUsed, updatedAt: new Date() })
+          .where(eq(subscribers.email, subscriberEmail.toLowerCase()))
+          .catch(() => {});
+      }
     }
   }
 
@@ -189,6 +198,52 @@ export async function POST(request: NextRequest) {
     if (new RegExp(si.pattern, 'i').test(combined)) {
       matchedStrengths.push(si.strength);
     }
+  }
+
+  // ── Category-based analysis (ensures every idea gets meaningful feedback) ──
+  const category = detectCategory(ideaLower);
+  const CATEGORY_RISKS: Record<string, string[]> = {
+    ecommerce: ['E-commerce tools face high churn — merchants switch platforms and apps frequently', 'Customer acquisition cost for e-commerce tools is rising (avg $45-80 CAC)'],
+    fintech: ['Financial products face heavy regulatory requirements (KYC, AML, state licensing)', 'Trust is critical — new fintech products need significant credibility before users hand over financial data'],
+    healthtech: ['Healthcare products require HIPAA compliance, adding 3-6 months to development', 'Long sales cycles in healthcare (6-18 months for institutional buyers)'],
+    edtech: ['Education buyers are extremely price-sensitive — willingness to pay is low', 'Seasonal usage patterns make recurring revenue unpredictable'],
+    devtools: ['Developer tools compete with free open-source alternatives', 'Developers are the hardest audience to market to — they distrust traditional ads'],
+    marketing: ['Marketing tools face extreme saturation — there are 11,000+ MarTech solutions', 'Marketing budgets are the first to get cut in downturns'],
+    hr: ['HR software has long sales cycles and requires enterprise-grade security', 'Switching costs are high (good for retention) but also make initial adoption harder'],
+    realestate: ['Real estate tech adoption is slow — agents resist new tools', 'Transaction-based revenue is volatile and seasonal'],
+    foodtech: ['Restaurant margins are razor-thin (3-5%) — willingness to pay for software is low', 'Food industry has high churn — 60% of restaurants fail within 3 years'],
+    legaltech: ['Legal professionals are conservative technology adopters', 'Compliance requirements vary by jurisdiction, making scaling expensive'],
+    productivity: ['Productivity tools face intense competition from bundled features in existing platforms', 'Low switching costs mean users churn easily when the next shiny tool appears'],
+    analytics: ['Analytics tools compete with free Google Analytics and built-in platform dashboards', 'Data privacy regulations (GDPR, CCPA) add compliance overhead'],
+    security: ['Security products require extreme trust and credibility — hard for startups', 'Enterprise security sales require SOC 2, penetration testing, and long procurement cycles'],
+    'ai-native': ['AI-native products face commoditization as model APIs become cheaper and more accessible', 'AI wrapper products have thin moats — the underlying model provider can build the same feature'],
+  };
+
+  const CATEGORY_STRENGTHS: Record<string, string[]> = {
+    ecommerce: ['E-commerce ecosystem has built-in distribution via app stores (Shopify, BigCommerce)'],
+    fintech: ['Financial products command premium pricing — users expect to pay for money-related tools'],
+    healthtech: ['Healthcare has high willingness to pay and strong retention once adopted'],
+    devtools: ['Developer tools have strong word-of-mouth growth and community-driven adoption'],
+    legaltech: ['Legal professionals have high willingness to pay and long retention'],
+    security: ['Security spending is non-discretionary — budgets survive downturns'],
+  };
+
+  // Add category risks if no specific patterns matched (ensures every idea gets feedback)
+  if (matchedRisks.length === 0 && CATEGORY_RISKS[category]) {
+    for (const risk of CATEGORY_RISKS[category]) {
+      matchedRisks.push({ risk, weight: 0.3 }); // Lower weight than specific pattern matches
+    }
+  }
+  if (matchedStrengths.length === 0 && CATEGORY_STRENGTHS[category]) {
+    matchedStrengths.push(...CATEGORY_STRENGTHS[category]);
+  }
+
+  // General risks for ideas with very short descriptions
+  if (idea.length < 100 && matchedRisks.length === 0) {
+    matchedRisks.push({ risk: 'Idea description is too vague to assess specific market risks — add more detail for better analysis', weight: 0.2 });
+  }
+  if (!audience || audience.length < 5) {
+    matchedRisks.push({ risk: 'No clear target audience defined — "everyone" is not a market', weight: 0.25 });
   }
 
   // ── Confidence scoring ──
@@ -288,7 +343,7 @@ export async function POST(request: NextRequest) {
       }
     } : {}),
     // Let paid users know deeper analysis is coming (or capped)
-    ...(isPaid && subscriberEmail && !usageLimitHit ? {
+    ...(isPaid && subscriberEmail && !usageLimitHit && debateTriggered ? {
       deepValidation: {
         status: 'running',
         tier: subscriberPlan,
@@ -296,6 +351,11 @@ export async function POST(request: NextRequest) {
           ? 'Full research dossier running: Perplexity market research + AI enrichment + Guardian debate (8-12 min). Results emailed to you.'
           : 'Guardian adversarial debate running (5-7 min). Results emailed to you.',
         email: subscriberEmail,
+      }
+    } : isPaid && subscriberEmail && !usageLimitHit && !debateTriggered ? {
+      deepValidation: {
+        status: 'error',
+        message: 'Guardian debate service is temporarily unavailable. Your instant results are shown above. Please try again in a few minutes — your usage was not counted for this attempt.',
       }
     } : isPaid && usageLimitHit ? {
       deepValidation: {
@@ -387,16 +447,14 @@ async function captureSubmission(data: {
 }
 
 // ── Fire-and-forget: tell orchestrator to run debate + email results ──
-async function triggerGuardianAsync(idea: string, audience: string | undefined, email: string, plan: string = 'pro') {
+async function triggerGuardianAsync(idea: string, audience: string | undefined, email: string, plan: string = 'pro'): Promise<{ jobId: string } | null> {
   const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'https://greenbelt-orchestrator-production.up.railway.app';
   const GUARDIAN_SECRET = process.env.GUARDIAN_SECRET || 'greenbelt-guardian-2025';
 
   console.log(`[VaaS] 🎯 Triggering Guardian debate for: ${email}`);
 
-  // Fire-and-forget: orchestrator handles debate + email.
-  // Abort after 5s — we just need the request accepted, not the result.
   try {
-    await fetch(`${ORCHESTRATOR_URL}/api/challenge/async`, {
+    const res = await fetch(`${ORCHESTRATOR_URL}/api/challenge/async`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -407,15 +465,17 @@ async function triggerGuardianAsync(idea: string, audience: string | undefined, 
         notifyEmail: email,
         tier: plan === 'enterprise' ? 'enterprise' : 'pro',
       }),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(10_000),
     });
-    console.log(`[VaaS] ✅ Guardian debate queued for ${email}`);
+    const data = await res.json();
+    console.log(`[VaaS] ✅ Guardian debate queued: ${data.jobId}`);
+    return { jobId: data.jobId };
   } catch (err) {
-    // Timeout is expected — orchestrator accepted and is processing
     if (err instanceof Error && err.name === 'TimeoutError') {
-      console.log(`[VaaS] ✅ Guardian debate accepted (processing async on orchestrator)`);
-    } else {
-      console.error(`[VaaS] Guardian trigger failed:`, err instanceof Error ? err.message : err);
+      console.log(`[VaaS] ⚠️ Guardian trigger timed out — orchestrator may be down`);
+      return null;
     }
+    console.error(`[VaaS] Guardian trigger failed:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }

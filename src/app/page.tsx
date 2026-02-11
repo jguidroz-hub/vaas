@@ -11,19 +11,29 @@ function CheckoutBannerInner() {
 
   useEffect(() => {
     // After successful checkout, retrieve customer email from session and auto-login
+    // Webhook may take a few seconds to fire — retry up to 3 times
     if (checkout === 'success' && sessionId) {
-      fetch(`/api/checkout/success?session_id=${sessionId}`)
-        .then(r => r.json())
-        .then(data => {
+      const tryAutoLogin = async (attempt = 1) => {
+        try {
+          const res = await fetch(`/api/checkout/success?session_id=${sessionId}`);
+          const data = await res.json();
           if (data.email) {
-            fetch('/api/auth', {
+            const authRes = await fetch('/api/auth', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email: data.email }),
-            }).catch(() => {});
+            });
+            const authData = await authRes.json();
+            if (authData.retryable && attempt < 4) {
+              setTimeout(() => tryAutoLogin(attempt + 1), attempt * 3000);
+            } else if (authData.codeSent) {
+              // OTP sent — user needs to check email. Show hint.
+            }
           }
-        })
-        .catch(() => {});
+        } catch {}
+      };
+      // First attempt after 2s (give webhook time to fire)
+      setTimeout(() => tryAutoLogin(1), 2000);
     }
   }, [checkout, sessionId]);
 

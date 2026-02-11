@@ -1,32 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { subscribers } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
-// In-memory verification codes (serverless-safe for short-lived codes)
-const verificationCodes = new Map<string, { code: string; expiresAt: number }>();
+// Store OTP codes in the database to survive serverless cold starts
+// Uses a simple approach: store in the subscribers table via a temp column,
+// or use a separate query. For simplicity, use a DB-backed approach via raw SQL.
 
-// Cleanup expired codes periodically
-function cleanupCodes() {
-  const now = Date.now();
-  verificationCodes.forEach((v, k) => {
-    if (now > v.expiresAt) verificationCodes.delete(k);
-  });
-}
-
-// Rate limit: max 3 code requests per email per 15 min
-const codeRateLimit = new Map<string, { count: number; resetAt: number }>();
-
-function checkCodeRateLimit(email: string): boolean {
-  const now = Date.now();
-  const entry = codeRateLimit.get(email);
-  if (!entry || now > entry.resetAt) {
-    codeRateLimit.set(email, { count: 1, resetAt: now + 900_000 });
+// Rate limit: max 3 code requests per email per 15 min (DB-backed)
+async function checkAndIncrementCodeRate(email: string): Promise<boolean> {
+  try {
+    // Use DB to track rate limiting (survives cold starts)
+    const result = await db.execute(sql`
+      SELECT otp_code, otp_expires_at, otp_attempts 
+      FROM subscribers 
+      WHERE email = ${email}
+    `);
+    if (result.rows.length === 0) return true; // No subscriber = can't rate limit
+    const row = result.rows[0] as any;
+    const attempts = row.otp_attempts || 0;
+    const expiresAt = row.otp_expires_at ? new Date(row.otp_expires_at) : null;
+    
+    // If the last OTP is still valid and attempts >= 3, block
+    if (expiresAt && new Date() < expiresAt && attempts >= 3) return false;
     return true;
+  } catch {
+    return true; // On error, allow (don't block legitimate users)
   }
-  if (entry.count >= 3) return false;
-  entry.count++;
-  return true;
 }
 
 // POST: Two-step auth flow
@@ -49,6 +49,12 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     if (result.length === 0 || result[0].status !== 'active' || result[0].plan === 'free') {
+      if (!code) {
+        return NextResponse.json({ 
+          error: 'No active subscription found. If you just subscribed, please wait a moment and try again — it can take up to 30 seconds to activate.',
+          retryable: true 
+        }, { status: 404 });
+      }
       return NextResponse.json({ error: 'No active subscription found for this email.' }, { status: 404 });
     }
 
@@ -56,19 +62,24 @@ export async function POST(req: NextRequest) {
 
     // STEP 2: Verify code
     if (code) {
-      cleanupCodes();
-      const stored = verificationCodes.get(normalized);
-
-      if (!stored || Date.now() > stored.expiresAt) {
+      // Read OTP from DB
+      const otpResult = await db.execute(sql`
+        SELECT otp_code, otp_expires_at FROM subscribers WHERE email = ${normalized}
+      `);
+      const row = otpResult.rows[0] as any;
+      
+      if (!row?.otp_code || !row?.otp_expires_at || new Date() > new Date(row.otp_expires_at)) {
         return NextResponse.json({ error: 'Code expired. Request a new one.' }, { status: 400 });
       }
 
-      if (stored.code !== code.trim()) {
+      if (row.otp_code !== code.trim()) {
         return NextResponse.json({ error: 'Invalid code.' }, { status: 400 });
       }
 
-      // Valid! Set cookie and clean up
-      verificationCodes.delete(normalized);
+      // Valid! Clear OTP and set cookie
+      await db.execute(sql`
+        UPDATE subscribers SET otp_code = NULL, otp_expires_at = NULL, otp_attempts = 0 WHERE email = ${normalized}
+      `);
 
       const response = NextResponse.json({
         authenticated: true,
@@ -88,15 +99,20 @@ export async function POST(req: NextRequest) {
     }
 
     // STEP 1: Send verification code
-    if (!checkCodeRateLimit(normalized)) {
+    if (!(await checkAndIncrementCodeRate(normalized))) {
       return NextResponse.json({ error: 'Too many code requests. Try again in 15 minutes.' }, { status: 429 });
     }
 
     const verifyCode = Math.floor(100000 + Math.random() * 900000).toString();
-    verificationCodes.set(normalized, {
-      code: verifyCode,
-      expiresAt: Date.now() + 10 * 60 * 1000, // 10 min
-    });
+    
+    // Store OTP in DB (survives serverless cold starts)
+    await db.execute(sql`
+      UPDATE subscribers 
+      SET otp_code = ${verifyCode}, 
+          otp_expires_at = ${new Date(Date.now() + 10 * 60 * 1000).toISOString()}::timestamp,
+          otp_attempts = COALESCE(otp_attempts, 0) + 1
+      WHERE email = ${normalized}
+    `);
 
     // Send code via Resend
     if (process.env.RESEND_API_KEY) {
@@ -109,7 +125,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           from: 'Greenbelt <noreply@projectgreenbelt.com>',
           to: normalized,
-          subject: `Your VaaS verification code: ${verifyCode}`,
+          subject: `Your verification code: ${verifyCode}`,
           html: `
             <div style="font-family:system-ui;max-width:480px;margin:0 auto;padding:32px;">
               <h2 style="color:#111;">Your verification code</h2>
@@ -117,7 +133,7 @@ export async function POST(req: NextRequest) {
                 ${verifyCode}
               </div>
               <p style="color:#6b7280;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-              <p style="color:#9ca3af;font-size:12px;margin-top:24px;">VaaS by Greenbelt · vaas-greenbelt.vercel.app</p>
+              <p style="color:#9ca3af;font-size:12px;margin-top:24px;">Greenbelt · vaas-greenbelt.vercel.app</p>
             </div>
           `,
         }),

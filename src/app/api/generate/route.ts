@@ -109,14 +109,49 @@ function generateIdeasLocally(
   const avoidLower = (avoid || '').toLowerCase();
   const interestsLower = (interests || '').toLowerCase();
 
+  // Skill alias map for fuzzy matching
+  const SKILL_ALIASES: Record<string, string[]> = {
+    'Full-stack development': ['coding', 'programming', 'developer', 'full-stack', 'fullstack', 'web dev', 'software', 'engineer'],
+    'Data science / ML': ['data', 'ml', 'machine learning', 'ai', 'analytics', 'data science'],
+    'Design / UX': ['design', 'ux', 'ui', 'frontend', 'visual'],
+    'Marketing / Growth': ['marketing', 'growth', 'seo', 'content', 'social media'],
+    'E-commerce': ['ecommerce', 'e-commerce', 'shopify', 'store', 'retail'],
+    'DevOps / Infrastructure': ['devops', 'infrastructure', 'cloud', 'aws', 'deploy'],
+    'Finance / Accounting': ['finance', 'accounting', 'fintech', 'bookkeeping'],
+    'Healthcare': ['health', 'medical', 'healthcare', 'clinical'],
+    'Education': ['education', 'teaching', 'edtech', 'learning'],
+    'Construction': ['construction', 'building', 'contractor'],
+    'Food & beverage': ['food', 'restaurant', 'culinary', 'hospitality'],
+    'Real estate': ['real estate', 'property', 'realestate'],
+  };
+
+  function skillMatches(ideaSkill: string, userSkills: string[]): boolean {
+    // Direct match
+    if (userSkills.includes(ideaSkill)) return true;
+    // Fuzzy match via aliases
+    const aliases = SKILL_ALIASES[ideaSkill] || [];
+    return userSkills.some(us => {
+      const usLower = us.toLowerCase();
+      return aliases.some(a => usLower.includes(a) || a.includes(usLower));
+    });
+  }
+
   // Filter by skills match + interests + avoidance
   let candidates = ideaBank.filter(idea => {
-    // Must match at least one skill
-    if (!idea.skills.some((s: string) => skills.includes(s))) return false;
+    // Must match at least one skill (with fuzzy matching)
+    if (!idea.skills.some((s: string) => skillMatches(s, skills))) return false;
     // Check avoidance
     if (avoidLower && (avoidLower.includes(idea.category.toLowerCase()) || idea.description.toLowerCase().includes(avoidLower))) return false;
     return true;
   });
+
+  // If no matches with skill filter, return top ideas regardless (better than empty)
+  if (candidates.length === 0) {
+    candidates = ideaBank.filter(idea => {
+      if (avoidLower && (avoidLower.includes(idea.category.toLowerCase()) || idea.description.toLowerCase().includes(avoidLower))) return false;
+      return true;
+    });
+  }
 
   // Boost ideas matching interests
   if (interestsLower) {
