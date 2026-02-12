@@ -31,7 +31,7 @@ export default function IdeasPage() {
             <span className="text-green-400">Free to explore.</span>
           </h1>
           <p className="text-gray-400 text-lg max-w-xl mx-auto mb-8">
-            Real ideas submitted by founders, scored by our AI. 
+            Anonymized summaries of validated ideas, scored by our AI. 
             Only ideas scoring 60%+ confidence make it here.
           </p>
           
@@ -75,9 +75,7 @@ export default function IdeasPage() {
                   </div>
                 </div>
 
-                {idea.audience && (
-                  <p className="text-gray-500 text-sm mb-2">🎯 {idea.audience}</p>
-                )}
+                {/* Audience removed for anonymity */}
 
                 <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
                   <span>{idea.revenue_model || idea.revenueModel}</span>
@@ -96,7 +94,7 @@ export default function IdeasPage() {
                   </div>
                 )}
 
-                <a href={`/?idea=${encodeURIComponent(idea.idea)}&audience=${encodeURIComponent(idea.audience || '')}`}
+                <a href="/"
                   className="inline-block mt-4 text-green-400 hover:text-green-300 text-sm font-medium">
                   Run your own validation →
                 </a>
